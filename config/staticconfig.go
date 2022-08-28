@@ -12,7 +12,7 @@ var StaticAppConfig = AllConfig{Devices: []types.DeviceConfig{
 	// Lights
 	{
 		Name:  "Pendant Light",
-		Ip:    "192.168.1.50",
+		Ip:    "127.0.0.1",
 		Model: types.KasaKL130B,
 		Room:  "Living Room",
 	}, {

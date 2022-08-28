@@ -7,13 +7,9 @@ import (
 	"time"
 )
 
-func openConnection(host string, port uint16) net.Conn {
-	dialer := &net.Dialer{Timeout: 2 * time.Second}
-	connection, err := dialer.Dial("tcp", host+":"+strconv.Itoa(int(port)))
-	if err != nil {
-		panic("Could not open connection: " + err.Error())
-	}
-	return connection
+func openConnection(host string, port uint16) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 1 * time.Second}
+	return dialer.Dial("tcp", host+":"+strconv.Itoa(int(port)))
 }
 
 func queryDevice(connection net.Conn, request string) (response []byte) {
