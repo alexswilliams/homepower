@@ -46,23 +46,30 @@ func ExtractAllData(device *types.DeviceConfig) (*PeriodicDeviceReport, error) {
 	defer func() { _ = connection.Close() }()
 
 	// All kasa devices support the `get_sysinfo` query
-	var deviceInfoJson = queryDevice(connection, sysInfoBody)
+	var deviceInfoJson []byte
+	if deviceInfoJson, err = queryDevice(connection, sysInfoBody); err != nil {
+		return nil, err
+	}
 
 	var eMeterRealTimeBody, supportsEMeter = eMeterQueryForDevice(device.Model)
 	var realTimeJson []byte
 	if supportsEMeter {
-		realTimeJson = queryDevice(connection, eMeterRealTimeBody)
+		if realTimeJson, err = queryDevice(connection, eMeterRealTimeBody); err != nil {
+			return nil, err
+		}
 	}
 
 	var lampInfoQueryBody, supportsLampInfo = lightDetailsQueryForDevice(device.Model)
 	var lampInfoJson []byte
 	if supportsLampInfo {
-		lampInfoJson = queryDevice(connection, lampInfoQueryBody)
+		if lampInfoJson, err = queryDevice(connection, lampInfoQueryBody); err != nil {
+			return nil, err
+		}
+
 	}
 
-	report, err := buildPeriodicDeviceReport(device.Model, deviceInfoJson,
+	return buildPeriodicDeviceReport(device.Model, deviceInfoJson,
 		lampInfoJson, supportsLampInfo, realTimeJson, supportsEMeter, startTime)
-	return report, err
 }
 
 func buildPeriodicDeviceReport(
@@ -146,7 +153,7 @@ func appendDeviceInfo(model types.DeviceType, deviceInfo []byte, report *Periodi
 		var lightState = data["light_state"].(map[string]interface{})
 		report.SmartLightInfo.IsOn = int(lightState["on_off"].(float64)) == 1
 		if report.SmartLightInfo.IsOn {
-			report.SmartLightInfo.Mode = lightState["hue"].(string)
+			report.SmartLightInfo.Mode = lightState["mode"].(string)
 			report.SmartLightInfo.Hue = int(lightState["hue"].(float64))
 			report.SmartLightInfo.Saturation = int(lightState["saturation"].(float64))
 			report.SmartLightInfo.ColourTemperature = int(lightState["color_temp"].(float64))

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -32,18 +33,68 @@ func main() {
 	for _, dev := range configs.Devices {
 		var lastDeviceReport = kasa.LatestDeviceReport{}
 		var infoMetric = device.RegisterMetrics(registry, dev, &lastDeviceReport)
+		var successMetric = prometheus.NewGauge(prometheus.GaugeOpts{
+			Name:        "kasa_scrape_success",
+			ConstLabels: kasa.GenerateCommonLabels(dev),
+		})
+		registry.MustRegister(successMetric)
+		var lastInfoMetric *prometheus.GaugeVec = nil
+
 		go pollDevice(&allExited, shouldExit, dev, func(report *kasa.PeriodicDeviceReport) {
 			lastDeviceReport.Latest = report
-			infoMetric.With(prometheus.Labels{
-				"kasa_active_mode":       report.ActiveMode,
-				"kasa_alias":             report.Alias,
-				"kasa_model_description": report.ModelDescription,
-				"kasa_device_id":         report.DeviceId,
-				"kasa_hardware_id":       report.HardwareId,
-				"kasa_dev_mac":           report.Mac,
-				"kasa_model_name":        report.ModelName,
-				"kasa_dev_type":          report.DeviceType,
-			}).Set(1.0)
+			if report == nil {
+				successMetric.Set(0.0)
+			} else {
+				successMetric.Set(1.0)
+			}
+
+			if lastInfoMetric != nil {
+				lastInfoMetric.Reset()
+				lastInfoMetric = nil
+			}
+			if report != nil {
+				thisInfoMetric := infoMetric.MustCurryWith(prometheus.Labels{
+					"kasa_active_mode":       report.ActiveMode,
+					"kasa_alias":             report.Alias,
+					"kasa_model_description": report.ModelDescription,
+					"kasa_device_id":         report.DeviceId,
+					"kasa_hardware_id":       report.HardwareId,
+					"kasa_dev_mac":           report.Mac,
+					"kasa_model_name":        report.ModelName,
+					"kasa_dev_type":          report.DeviceType,
+				})
+				if report.SmartLightInfo != nil {
+					thisInfoMetric = thisInfoMetric.MustCurryWith(prometheus.Labels{
+						"kasa_light_device_state":       report.SmartLightInfo.DeviceState,
+						"kasa_light_is_dimmable":        strconv.FormatBool(report.SmartLightInfo.IsDimmable),
+						"kasa_light_is_colour":          strconv.FormatBool(report.SmartLightInfo.IsColour),
+						"kasa_light_is_variable_temp":   strconv.FormatBool(report.SmartLightInfo.IsVariableColourTemperature),
+						"kasa_light_on_mode":            report.SmartLightInfo.Mode,
+						"kasa_light_beam_angle":         strconv.Itoa(report.SmartLightInfo.LampBeamAngle),
+						"kasa_light_min_voltage":        strconv.Itoa(report.SmartLightInfo.MinimumVoltage),
+						"kasa_light_max_voltage":        strconv.Itoa(report.SmartLightInfo.MaximumVoltage),
+						"kasa_light_wattage":            strconv.Itoa(report.SmartLightInfo.Wattage),
+						"kasa_light_incandescent_equiv": strconv.Itoa(report.SmartLightInfo.IncandescentEquivalent),
+						"kasa_light_max_lumens":         strconv.Itoa(report.SmartLightInfo.MaximumLumens),
+					})
+				} else {
+					thisInfoMetric = thisInfoMetric.MustCurryWith(prometheus.Labels{
+						"kasa_light_device_state":       "n/a",
+						"kasa_light_is_dimmable":        "n/a",
+						"kasa_light_is_colour":          "n/a",
+						"kasa_light_is_variable_temp":   "n/a",
+						"kasa_light_on_mode":            "n/a",
+						"kasa_light_beam_angle":         "n/a",
+						"kasa_light_min_voltage":        "n/a",
+						"kasa_light_max_voltage":        "n/a",
+						"kasa_light_wattage":            "n/a",
+						"kasa_light_incandescent_equiv": "n/a",
+						"kasa_light_max_lumens":         "n/a",
+					})
+				}
+				thisInfoMetric.With(prometheus.Labels{}).Set(1.0)
+				lastInfoMetric = thisInfoMetric
+			}
 		})
 	}
 
@@ -72,7 +123,6 @@ func startHttpServer(mux *http.ServeMux, shouldExit chan bool) {
 		}
 	}()
 	log.Println(server.ListenAndServe())
-	close(shouldExit)
 }
 
 func pollDevice(
@@ -81,7 +131,7 @@ func pollDevice(
 	dev types.DeviceConfig,
 	setLatestReport func(report *kasa.PeriodicDeviceReport),
 ) {
-	println("Starting ticker for polling", dev.Room, dev.Name)
+	println("Polling", dev.Room, dev.Name, "every 10 seconds")
 	defer allExited.Done()
 	ticker := time.NewTicker(10 * time.Second)
 	for {
@@ -96,6 +146,7 @@ func pollDevice(
 			if err == nil {
 				setLatestReport(report)
 			} else {
+				setLatestReport(nil)
 				println("Could not query", dev.Room, dev.Name, err.Error())
 			}
 		}

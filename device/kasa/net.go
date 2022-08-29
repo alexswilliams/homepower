@@ -1,7 +1,8 @@
 package kasa
 
 import (
-	"fmt"
+	"errors"
+	"log"
 	"net"
 	"strconv"
 	"time"
@@ -12,27 +13,31 @@ func openConnection(host string, port uint16) (net.Conn, error) {
 	return dialer.Dial("tcp", host+":"+strconv.Itoa(int(port)))
 }
 
-func queryDevice(connection net.Conn, request string) (response []byte) {
+func queryDevice(connection net.Conn, request string) ([]byte, error) {
 	err := connection.SetWriteDeadline(time.Now().Add(1 * time.Second))
 	if err != nil {
-		panic("Could not set write timeout on connection: " + err.Error())
+		log.Println("Could not set write timeout on connection")
+		return nil, err
 	}
 	scrambledText := scramble([]byte(request))
 	bytesWritten, err := connection.Write(scrambledText)
 	if err != nil || bytesWritten != len(scrambledText) {
-		panic("Could not write command to connection")
+		log.Println("Could not write command to connection")
+		return nil, err
 	}
 
-	err = connection.SetReadDeadline(time.Now().Add(1 * time.Second))
+	err = connection.SetReadDeadline(time.Now().Add(2 * time.Second))
 	if err != nil {
-		panic("Could not set read timeout on connection: " + err.Error())
+		log.Println("Could not set read timeout on connection")
+		return nil, err
 	}
 	buffer := make([]byte, 2048)
 
 	bytesRead, err := connection.Read(buffer)
 	buffer = buffer[:bytesRead]
 	if err != nil || bytesRead < 8 {
-		panic("Could not read first response packet: " + err.Error())
+		log.Println("Could not read first response packet: " + err.Error())
+		return nil, err
 	}
 	expectedSize := expectedLinkiePacketSize(buffer)
 	for len(buffer) < expectedSize && len(buffer) <= 4096 {
@@ -40,13 +45,12 @@ func queryDevice(connection net.Conn, request string) (response []byte) {
 		bytesRead, err := connection.Read(tmpBuffer)
 		tmpBuffer = tmpBuffer[:bytesRead]
 		if err != nil {
-			panic("Could not read from connection: " + err.Error())
+			log.Println("Could not read from connection: " + err.Error())
+			return nil, err
 		}
 		buffer = append(buffer, tmpBuffer...)
 	}
-	response = unscramble(buffer)
-	fmt.Printf("%s\n\n", response)
-	return
+	return unscramble(buffer)
 }
 
 func scramble(b []byte) []byte {
@@ -61,20 +65,21 @@ func scramble(b []byte) []byte {
 	return buffer
 }
 
-func unscramble(b []byte) []byte {
+func unscramble(b []byte) ([]byte, error) {
 	var iv byte = 171
 	buffer := make([]byte, len(b)-4)
 
 	expectedSize := expectedLinkiePacketSize(b)
 	if expectedSize != len(b)-4 {
-		panic("Unexpected reply size - expected " + strconv.Itoa(expectedSize) +
+		log.Println("Unexpected reply size - expected " + strconv.Itoa(expectedSize) +
 			" bytes but received " + strconv.Itoa(len(b)-4) + " bytes")
+		return nil, errors.New("unexpected reply size")
 	}
 	for i, ch := range b[4:] {
 		buffer[i] = byte(iv ^ ch)
 		iv = ch
 	}
-	return buffer
+	return buffer, nil
 }
 
 func expectedLinkiePacketSize(b []byte) int {
