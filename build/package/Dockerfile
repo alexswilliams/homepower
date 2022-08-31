@@ -6,4 +6,4 @@ RUN make bin/main
 FROM scratch
 WORKDIR /app
 COPY --from=build /go/src/app/bin/main ./
-CMD ["./main"]
+ENTRYPOINT ["./main"]

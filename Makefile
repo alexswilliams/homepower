@@ -9,7 +9,10 @@ deps: go.mod
 run: bin/main
 	./bin/main
 
-docker:
+clean:
+	rm -rf bin vendor
+
+docker-local:
 	docker build -f build/package/Dockerfile .
 
-.PHONY: deps run
+.PHONY: deps run clean docker-local
