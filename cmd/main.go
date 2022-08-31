@@ -52,6 +52,7 @@ func main() {
 				lastInfoMetric.Reset()
 				lastInfoMetric = nil
 			}
+			// TODO: this stuff really should be here - but until another manufacturer is added, "it works"
 			if report != nil {
 				thisInfoMetric := infoMetric.MustCurryWith(prometheus.Labels{
 					"kasa_active_mode":       report.ActiveMode,
@@ -100,21 +101,21 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
-	go startHttpServer(mux, shouldExit)
+	go startHttpServer(9981, mux, shouldExit)
 
 	allExited.Wait()
 	os.Exit(0)
 }
 
-func startHttpServer(mux *http.ServeMux, shouldExit chan bool) {
+func startHttpServer(port int16, mux *http.ServeMux, shouldExit chan bool) {
 	server := http.Server{
-		Addr:              ":8080",
+		Addr:              ":" + strconv.Itoa(int(port)),
 		Handler:           mux,
 		ReadTimeout:       1500 * time.Millisecond,
 		ReadHeaderTimeout: 500 * time.Millisecond,
 		WriteTimeout:      2000 * time.Second,
 	}
-	println("Listening on 8080")
+	println("Listening on port " + strconv.Itoa(int(port)))
 	go func() {
 		<-shouldExit
 		println("Received signal to shut down http server")
@@ -143,11 +144,12 @@ func pollDevice(
 		case <-ticker.C:
 			time.Sleep(time.Duration(rand.Intn(2000)) * time.Millisecond)
 			report, err := device.ExtractAllData(&dev)
-			if err == nil {
-				setLatestReport(report)
-			} else {
+			setLatestReport(report)
+			if err != nil {
 				setLatestReport(nil)
-				println("Could not query", dev.Room, dev.Name, err.Error())
+				if err.Error() != "unknown device type" {
+					println("Could not query", dev.Room, dev.Name, err.Error())
+				}
 			}
 		}
 	}
