@@ -6,13 +6,14 @@ on:
       - master
 
 jobs:
-  build:
+  Publish_Docker_Image:
     runs-on: ubuntu-latest
     steps:
       - name: Set Parameters
         id: params
         run: |
           echo "::set-output name=date::$(date +%Y-%m-%d-%H-%M)"
+          echo "::set-output name=shortRef::$(head -c 7 <<< '${{ github.sha }}')"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
@@ -30,8 +31,4 @@ jobs:
           file: ./build/package/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64/v8
-          tags: "alexswilliams/homepower:${{ github.ref_name }}--${{ steps.params.outputs.date }}--${{ github.sha }}"
-
-
-      - name: Build and push
-        run: make docker
+          tags: "alexswilliams/homepower:${{ github.ref_name }}--${{ steps.params.outputs.date }}--${{ steps.params.outputs.shortRef }}"
