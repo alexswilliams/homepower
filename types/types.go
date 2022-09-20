@@ -8,6 +8,7 @@ const (
 	KasaKL50B
 	TapoL900
 	TapoP100
+	TapoP110
 )
 
 type DeviceType int

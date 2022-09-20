@@ -7,6 +7,7 @@ import (
 	"homepower/config"
 	"homepower/device"
 	"homepower/device/kasa"
+	"homepower/device/tapo"
 	"homepower/types"
 	"log"
 	"math/rand"
@@ -21,6 +22,31 @@ import (
 
 func main() {
 	var configs = config.StaticAppConfig
+	var dc = tapo.DeviceConnection{
+		Device: &configs.Devices[17],
+	}
+	err := dc.DoKeyExchange()
+	log.Println("Keys exchanged")
+	if err != nil {
+		panic(err)
+	}
+	err = dc.DoLogin("redactedForGitCommit", "redactedForGitCommit")
+	if err != nil {
+		panic(err)
+	}
+	log.Println("Logged in")
+	err = dc.GetDeviceInfo()
+	if err != nil {
+		panic(err)
+	}
+	err = dc.GetEnergyInfo()
+	if err != nil {
+		panic(err)
+	}
+
+	if true {
+		return
+	}
 
 	var signals = make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT)

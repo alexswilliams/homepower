@@ -95,4 +95,15 @@ var StaticAppConfig = AllConfig{Devices: []types.DeviceConfig{
 		Ip:    "192.168.1.66",
 		Model: types.KasaHS110,
 		Room:  "Living Room",
-	}}}
+	}, {
+		Name:  "Fridge Freezer",
+		Ip:    "192.168.1.67",
+		Model: types.TapoP110,
+		Room:  "Kitchen",
+	}, {
+		Name:  "Washing Machine",
+		Ip:    "192.168.1.68",
+		Model: types.TapoP110,
+		Room:  "Kitchen",
+	},
+}}
