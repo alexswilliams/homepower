@@ -22,7 +22,7 @@ import (
 
 func main() {
 	var configs = config.StaticAppConfig
-	d, err := tapo.NewDevice("redactedForGitCommit", "redactedForGitCommit", configs.Devices[17].Ip, 80)
+	d, err := tapo.NewDevice(configs.TapoCredentials.EmailAddress, configs.TapoCredentials.Password, "192.168.1.56", 80)
 	if err != nil {
 		panic(err)
 	}
@@ -39,10 +39,7 @@ func main() {
 		return
 	}
 
-	var signals = make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT)
-	var shouldExit = make(chan bool, 1)
-	go func() { <-signals; println("Received SIGINT"); close(shouldExit) }()
+	var shouldExit = closeOnSigInt(make(chan bool, 1)) // is closed by SIGINT
 	var allExited sync.WaitGroup
 	allExited.Add(len(configs.Devices))
 
@@ -122,6 +119,13 @@ func main() {
 
 	allExited.Wait()
 	os.Exit(0)
+}
+
+func closeOnSigInt(channel chan bool) chan bool {
+	var signals = make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT)
+	go func() { <-signals; println("Received SIGINT"); close(channel) }()
+	return channel
 }
 
 func startHttpServer(port int16, mux *http.ServeMux, shouldExit chan bool) {

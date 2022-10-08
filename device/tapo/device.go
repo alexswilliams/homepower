@@ -56,18 +56,12 @@ type EnergyMeterInfo struct {
 }
 
 func (dev *Device) GetDeviceInfo() error {
-	if !dev.connection.isLoggedIn() {
-		log.Println("Not logged in, will log in before device info request")
-		if err := dev.connection.doLogin(); err != nil {
-			return err
-		}
-	}
-
 	responseResult, err := dev.connection.makeApiCall("get_device_info", nil)
 	if err != nil {
 		return err
 	}
 	log.Println(responseResult) // TODO: just for debugging
+	// P110
 	//map[
 	// avatar:fan
 	// default_states:map[
@@ -99,22 +93,63 @@ func (dev *Device) GetDeviceInfo() error {
 	// time_diff:0
 	// type:SMART.TAPOPLUG
 	//]
+
+	// L900
+	// map[
+	//  avatar:behind_tv
+	//  brightness:100
+	//  color_temp:9000
+	//  color_temp_range:[9000 9000]
+	//  default_states:map[
+	//    state:map[brightness:100 color_temp:9000 hue:0 saturation:0]
+	//    type:last_states
+	//  ]
+	//  device_id:80238FA1A169ACE290AB2E36C7C45C591F1CA374
+	//  device_on:true
+	//  fw_id:7BECA9DC454565672FEC87D1104F9972
+	//  fw_ver:1.0.15 Build 220620 Rel.144654
+	//  has_set_location_info:true
+	//  hue:0
+	//  hw_id:17A075F2055FD95D99BE012EB439F21C
+	//  hw_ver:1.0
+	//  ip:192.168.1.56
+	//  lang:en_US
+	//  latitude:501234 // (degrees * 1000 - smudged to protect my location...)
+	//  lighting_effect:map[
+	//    brightness:100
+	//    custom:0
+	//    display_colors:[[30 81 100] [40 100 100]]
+	//    enable:0
+	//    id:TapoStrip_4HVKmMc6vEzjm36jXaGwMs
+	//    name:Flicker
+	//  ]
+	//  longitude:-11234 // (degrees * 1000 - smudged to protect my location...)
+	//  mac:6C-5A-B0-32-47-0F
+	//  model:L900
+	//  music_rhythm_enable:false
+	//  music_rhythm_mode:single_lamp
+	//  nickname:TW9uaXRvciBMaWdodCBTdHJpcA==
+	//  oem_id:8807B384544C42EFE1B0ABB0C45CAA8E
+	//  overheated:false
+	//  region:Europe/London
+	//  rssi:-49
+	//  saturation:0
+	//  signal_level:3
+	//  specs:
+	//  ssid:QWxleElvVA==
+	//  time_diff:0
+	//  type:SMART.TAPOBULB
+	// ]
 	return nil
 }
 
 func (dev *Device) GetEnergyInfo() error {
-	if !dev.connection.isLoggedIn() {
-		log.Println("Not logged in, will log in before device info request")
-		if err := dev.connection.doLogin(); err != nil {
-			return err
-		}
-	}
-
 	responseResult, err := dev.connection.makeApiCall("get_energy_usage", nil)
 	if err != nil {
 		return err
 	}
 	log.Println(responseResult) // TODO: just for debugging
+	// P110
 	//map[
 	// current_power:2529
 	// local_time:2022-09-20 03:05:19

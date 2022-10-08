@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -30,6 +32,7 @@ type passthroughParams struct {
 type deviceAddresses struct {
 	ip          string // x.x.x.x
 	baseUrl     string // http://x.x.x.x:80
+	url         *url.URL
 	appUrl      string // http://x.x.x.x:80/app
 	appTokenUrl string // Empty string when not logged in, otherwise http://x.x.x.x:80/app?token=xxxx
 }
@@ -39,13 +42,11 @@ type deviceConnection struct {
 	password    string // Isn't it weird how the email is hashed and the password isn't
 	addresses   deviceAddresses
 	client      *http.Client // A long-lived HTTP client that also retains the HTTP session state (e.g. cookies)
-	//jar          *cookiejar.Jar
 
 	privateKey   *rsa.PrivateKey // This app's private key, nil until created during key-exchange
 	publicKeyPem string          // This app's public component, the empty string until created during key-exchange
 	cbcIv        []byte          // The shared CBC init vector between this app and the device, nil until after key-exchange
 	cbcCipher    *cipher.Block   // The shared cipher info between this app and the device, nil until after key-exchange
-	//token        *string
 }
 
 //goland:noinspection HttpUrlsUsage
@@ -65,12 +66,17 @@ func newDeviceConnection(email, password, deviceIp string, port uint16) (*device
 		ForceAttemptHTTP2:      false,
 	}
 	baseUrl := "http://" + deviceIp + ":" + strconv.FormatUint(uint64(port), 10)
+	parsedUrl, err := url.Parse(baseUrl)
+	if err != nil {
+		return nil, err
+	}
 	return &deviceConnection{
 		hashedEmail: hashUsername(email),
 		password:    password,
 		addresses: deviceAddresses{
 			ip:          deviceIp,
 			baseUrl:     baseUrl,
+			url:         parsedUrl,
 			appUrl:      baseUrl + "/app",
 			appTokenUrl: "",
 		},
@@ -79,7 +85,6 @@ func newDeviceConnection(email, password, deviceIp string, port uint16) (*device
 			Jar:       jar,
 			Timeout:   10 * time.Second,
 		},
-		//jar: jar,
 	}, nil
 }
 
@@ -98,9 +103,7 @@ func (dc *deviceConnection) initNewRsaKeypair() error {
 	return nil
 }
 
-//goland:noinspection HttpUrlsUsage
 func (dc *deviceConnection) devicePostUrl() string {
-	//if dc.token == nil {
 	if dc.addresses.appTokenUrl == "" {
 		return dc.addresses.appUrl
 	} else {
@@ -108,7 +111,6 @@ func (dc *deviceConnection) devicePostUrl() string {
 	}
 }
 
-//goland:noinspection HttpUrlsUsage
 func (dc *deviceConnection) applyTapoHeadersTo(request *http.Request) {
 	request.Header.Set("Referer", dc.addresses.baseUrl)
 	request.Header.Set("requestByApp", "true")
@@ -174,6 +176,7 @@ func (dc *deviceConnection) unmarshalPassthroughResponse(passthroughResult map[s
 		return nil, err
 	}
 	if errorCode, present := responseData["error_code"]; present && int(errorCode.(float64)) != 0 {
+		log.Println("response data:", responseData) // TODO: for debugging
 		return nil, errors.New("non-zero error code returned within encrypted payload")
 	}
 
@@ -215,8 +218,19 @@ func (dc *deviceConnection) doKeyExchange() error {
 	return nil
 }
 func (dc *deviceConnection) hasExchangedKeys() bool {
-	// TODO: check for cookie expiry
-	return dc.privateKey != nil && dc.cbcCipher != nil && dc.cbcIv != nil
+	return dc.hasValidSessionCookie() && dc.privateKey != nil && dc.cbcCipher != nil && dc.cbcIv != nil
+}
+
+func (dc *deviceConnection) hasValidSessionCookie() bool {
+	for _, cookie := range dc.client.Jar.Cookies(dc.addresses.url) {
+		if cookie.Name == "TP_SESSIONID" {
+			if cookie.Expires.Year() < 1601 { // has no expiry
+				return true
+			}
+			return cookie.Expires.After(time.Now())
+		}
+	}
+	return false
 }
 
 func (dc *deviceConnection) doLogin() error {
@@ -249,20 +263,24 @@ func (dc *deviceConnection) doLogin() error {
 		return err
 	}
 	token := responseResult["token"].(string)
-	//dc.token = &token
 	dc.addresses.appTokenUrl = dc.addresses.appUrl + "?token=" + token
 	return nil
 }
 func (dc *deviceConnection) isLoggedIn() bool {
 	return dc.hasExchangedKeys() && dc.addresses.appTokenUrl != "" && dc.client != nil
-	//return dc.hasExchangedKeys() && dc.token != nil && dc.addresses.appTokenUrl != "" && dc.jar != nil && dc.client != nil
 }
 func (dc *deviceConnection) logout() {
-	//dc.token = nil
 	dc.addresses.appTokenUrl = ""
 }
 
 func (dc *deviceConnection) makeApiCall(method string, params any) (map[string]interface{}, error) {
+	if !dc.isLoggedIn() {
+		log.Println("Not logged in, will log in before making api request")
+		if err := dc.doLogin(); err != nil {
+			return nil, err
+		}
+	}
+
 	passthroughBody, err := dc.marshalPassthroughPayload(method, params)
 	if err != nil {
 		return nil, err
