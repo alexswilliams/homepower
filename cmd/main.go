@@ -22,24 +22,15 @@ import (
 
 func main() {
 	var configs = config.StaticAppConfig
-	var dc = tapo.DeviceConnection{
-		Device: &configs.Devices[17],
-	}
-	err := dc.DoKeyExchange()
-	log.Println("Keys exchanged")
+	d, err := tapo.NewDevice("redactedForGitCommit", "redactedForGitCommit", configs.Devices[17].Ip, 80)
 	if err != nil {
 		panic(err)
 	}
-	err = dc.DoLogin("redactedForGitCommit", "redactedForGitCommit")
+	err = d.GetDeviceInfo()
 	if err != nil {
 		panic(err)
 	}
-	log.Println("Logged in")
-	err = dc.GetDeviceInfo()
-	if err != nil {
-		panic(err)
-	}
-	err = dc.GetEnergyInfo()
+	err = d.GetEnergyInfo()
 	if err != nil {
 		panic(err)
 	}

@@ -93,3 +93,10 @@ func hashUsername(username string) string {
 	hashed := sha1.Sum(input)
 	return hex.EncodeToString(hashed[:])
 }
+
+func (dc *deviceConnection) newEncrypter() cipher.BlockMode {
+	return cipher.NewCBCEncrypter(*dc.cbcCipher, dc.cbcIv)
+}
+func (dc *deviceConnection) newDecrypter() cipher.BlockMode {
+	return cipher.NewCBCDecrypter(*dc.cbcCipher, dc.cbcIv)
+}
