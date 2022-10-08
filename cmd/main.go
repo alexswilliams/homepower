@@ -22,18 +22,10 @@ import (
 
 func main() {
 	var configs = config.StaticAppConfig
-	d, err := tapo.NewDevice(configs.TapoCredentials.EmailAddress, configs.TapoCredentials.Password, "192.168.1.56", 80)
-	if err != nil {
-		panic(err)
-	}
-	err = d.GetDeviceInfo()
-	if err != nil {
-		panic(err)
-	}
-	err = d.GetEnergyInfo()
-	if err != nil {
-		panic(err)
-	}
+	doThingForDevice(configs.TapoCredentials, "192.168.1.56")
+	doThingForDevice(configs.TapoCredentials, "192.168.1.64")
+	doThingForDevice(configs.TapoCredentials, "192.168.1.67")
+	doThingForDevice(configs.TapoCredentials, "192.168.1.68")
 
 	if true {
 		return
@@ -119,6 +111,27 @@ func main() {
 
 	allExited.Wait()
 	os.Exit(0)
+}
+
+func doThingForDevice(creds config.Credentials, ip string) {
+	d, err := tapo.NewDevice(creds.EmailAddress, creds.Password, ip, 80)
+	if err != nil {
+		panic(err)
+	}
+
+	status := tapo.DeviceStatus{}
+	if err = d.PopulateDeviceInfo(&status); err != nil {
+		panic(err)
+	}
+	if status.ModelName == "P110" {
+		if err = d.GetEnergyInfo(&status); err != nil {
+			panic(err)
+		}
+	}
+	log.Printf("%+v", status)
+	log.Printf("%+v", status.SmartBulbInfo)
+	log.Printf("%+v", status.SmartPlugInfo)
+	log.Printf("%+v", status.EnergyMeterInfo)
 }
 
 func closeOnSigInt(channel chan bool) chan bool {
