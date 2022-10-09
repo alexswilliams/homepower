@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"strconv"
 )
 
@@ -22,14 +23,14 @@ func NewRsaKeypair() (*rsa.PrivateKey, error) {
 func textualPublicKey(key *rsa.PrivateKey) (string, error) {
 	marshalled, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("could not marshal public key as PKIX: %w", err)
 	}
 	var outBytes bytes.Buffer
 	if err := pem.Encode(&outBytes, &pem.Block{
 		Type:  "PUBLIC KEY",
 		Bytes: marshalled,
 	}); err != nil {
-		return "", err
+		return "", fmt.Errorf("could not PEM-encode marshalled public key: %w", err)
 	}
 	return string(outBytes.Bytes()), nil
 }
@@ -37,17 +38,20 @@ func textualPublicKey(key *rsa.PrivateKey) (string, error) {
 func cbcCipherAndIvFromHandshakeResponse(base64Ciphertext string, decryptionKey *rsa.PrivateKey) (*cipher.Block, []byte, error) {
 	cipherText, err := base64.StdEncoding.DecodeString(base64Ciphertext)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("could not decode ciphertext as base64: %w", err)
 	}
 	cleartextPayload, err := rsa.DecryptPKCS1v15(rand.Reader, decryptionKey, cipherText)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("could not decrypt ciphertext: %w", err)
 	}
 	if len(cleartextPayload) != 32 {
 		return nil, nil, errors.New("Expected payload to be 32 bytes, but payload was actually " + strconv.Itoa(len(cleartextPayload)) + " bytes")
 	}
 	block, err := aes.NewCipher(cleartextPayload[0:16])
-	return &block, cleartextPayload[16:32], err
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not construct CBC cipher from decrypted payload: %w", err)
+	}
+	return &block, cleartextPayload[16:32], nil
 }
 
 func encryptWithPkcs7Padding(encrypter cipher.BlockMode, clearText []byte) string {
@@ -57,17 +61,17 @@ func encryptWithPkcs7Padding(encrypter cipher.BlockMode, clearText []byte) strin
 	return base64.StdEncoding.EncodeToString(cipherText)
 }
 
-func decryptFromBase64(decrypter cipher.BlockMode, cipherTextBase64 string) ([]byte, error) {
-	cipherText, err := base64.StdEncoding.DecodeString(cipherTextBase64)
+func decryptFromBase64(decrypter cipher.BlockMode, base64Ciphertext string) ([]byte, error) {
+	cipherText, err := base64.StdEncoding.DecodeString(base64Ciphertext)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not decode ciphertext as base64: %w", err)
 	}
 	var clearText = make([]byte, len(cipherText))
 	decrypter.CryptBlocks(clearText, cipherText)
 	return pkcs7UnPad(clearText, decrypter.BlockSize())
 }
 
-// from https://github.com/mergermarket/go-pkcs7/blob/master/pkcs7.go - so small it's probably immoral to a dependency
+// from https://github.com/mergermarket/go-pkcs7/blob/master/pkcs7.go - so small it's probably immoral to add a dependency
 func pkcs7Pad(buf []byte, size int) []byte {
 	bufLen := len(buf)
 	padLen := size - bufLen%size

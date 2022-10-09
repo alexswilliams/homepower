@@ -22,10 +22,12 @@ import (
 
 func main() {
 	var configs = config.StaticAppConfig
-	doThingForDevice(configs.TapoCredentials, "192.168.1.56")
-	doThingForDevice(configs.TapoCredentials, "192.168.1.64")
-	doThingForDevice(configs.TapoCredentials, "192.168.1.67")
-	doThingForDevice(configs.TapoCredentials, "192.168.1.68")
+	registry := prometheus.NewRegistry()
+
+	doThingForDevice(configs.TapoCredentials, &types.DeviceConfig{Name: "Backlight", Model: types.TapoL900, Ip: "192.168.1.56"}, registry)
+	doThingForDevice(configs.TapoCredentials, &types.DeviceConfig{Name: "Slow Cooker", Model: types.TapoP100, Ip: "192.168.1.64"}, registry)
+	doThingForDevice(configs.TapoCredentials, &types.DeviceConfig{Name: "Fridge", Model: types.TapoP110, Ip: "192.168.1.67"}, registry)
+	doThingForDevice(configs.TapoCredentials, &types.DeviceConfig{Name: "Washer", Model: types.TapoP110, Ip: "192.168.1.68"}, registry)
 
 	if true {
 		return
@@ -35,13 +37,12 @@ func main() {
 	var allExited sync.WaitGroup
 	allExited.Add(len(configs.Devices))
 
-	registry := prometheus.NewRegistry()
 	for _, dev := range configs.Devices {
 		var lastDeviceReport = kasa.LatestDeviceReport{}
 		var infoMetric = device.RegisterMetrics(registry, dev, &lastDeviceReport)
 		var successMetric = prometheus.NewGauge(prometheus.GaugeOpts{
 			Name:        "kasa_scrape_success",
-			ConstLabels: kasa.GenerateCommonLabels(dev),
+			ConstLabels: types.GenerateCommonLabels(&dev),
 		})
 		registry.MustRegister(successMetric)
 		var lastInfoMetric *prometheus.GaugeVec = nil
@@ -113,25 +114,15 @@ func main() {
 	os.Exit(0)
 }
 
-func doThingForDevice(creds config.Credentials, ip string) {
-	d, err := tapo.NewDevice(creds.EmailAddress, creds.Password, ip, 80)
+func doThingForDevice(creds config.Credentials, config *types.DeviceConfig, registry prometheus.Registerer) {
+	d, err := tapo.NewDevice(creds.EmailAddress, creds.Password, config, registry)
 	if err != nil {
 		panic(err)
 	}
 
-	status := tapo.DeviceStatus{}
-	if err = d.PopulateDeviceInfo(&status); err != nil {
+	if err := d.UpdateMetrics(); err != nil {
 		panic(err)
 	}
-	if status.ModelName == "P110" {
-		if err = d.GetEnergyInfo(&status); err != nil {
-			panic(err)
-		}
-	}
-	log.Printf("%+v", status)
-	log.Printf("%+v", status.SmartBulbInfo)
-	log.Printf("%+v", status.SmartPlugInfo)
-	log.Printf("%+v", status.EnergyMeterInfo)
 }
 
 func closeOnSigInt(channel chan bool) chan bool {

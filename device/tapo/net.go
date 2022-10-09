@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -53,7 +54,7 @@ type deviceConnection struct {
 func newDeviceConnection(email, password, deviceIp string, port uint16) (*deviceConnection, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create new cookie jar whilst initialising %s: %w", deviceIp, err)
 	}
 	tr := &http.Transport{
 		DisableKeepAlives:      false,
@@ -68,7 +69,7 @@ func newDeviceConnection(email, password, deviceIp string, port uint16) (*device
 	baseUrl := "http://" + deviceIp + ":" + strconv.FormatUint(uint64(port), 10)
 	parsedUrl, err := url.Parse(baseUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not parse '%s' as a URL object: %w", baseUrl, err)
 	}
 	return &deviceConnection{
 		hashedEmail: hashUsername(email),
@@ -91,13 +92,13 @@ func newDeviceConnection(email, password, deviceIp string, port uint16) (*device
 func (dc *deviceConnection) initNewRsaKeypair() error {
 	key, err := NewRsaKeypair()
 	if err != nil {
-		return err
+		return fmt.Errorf("could not generate new RSA keypair: %w", err)
 	}
 	dc.privateKey = key
 	pubKeyString, err := textualPublicKey(dc.privateKey)
 	if err != nil {
 		dc.privateKey = nil
-		return err
+		return fmt.Errorf("could not extract textual public key from priate key: %w", err)
 	}
 	dc.publicKeyPem = pubKeyString
 	return nil
@@ -138,7 +139,7 @@ func (dc *deviceConnection) exchange(body []byte) (map[string]interface{}, error
 	responseBody, err := io.ReadAll(response.Body)
 	var responseData map[string]interface{}
 	if err := json.Unmarshal(responseBody, &responseData); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not unmarshal response as JSON: %w", err)
 	}
 
 	errorCode := int(responseData["error_code"].(float64))
@@ -156,7 +157,7 @@ func (dc *deviceConnection) marshalPassthroughPayload(method string, params any)
 		Params:          params,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not marshal passthrough payload: %w", err)
 	}
 	return json.Marshal(requestBodyMethodParams{
 		Method: "securePassthrough",
@@ -169,7 +170,7 @@ func (dc *deviceConnection) marshalPassthroughPayload(method string, params any)
 func (dc *deviceConnection) unmarshalPassthroughResponse(passthroughResult map[string]interface{}) (map[string]interface{}, error) {
 	decryptedResponse, err := decryptFromBase64(dc.newDecrypter(), passthroughResult["response"].(string))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not unmarshal passthrough response: %w", err)
 	}
 	var responseData map[string]interface{}
 	if err := json.Unmarshal(decryptedResponse, &responseData); err != nil {
@@ -187,7 +188,7 @@ func (dc *deviceConnection) unmarshalPassthroughResponse(passthroughResult map[s
 func (dc *deviceConnection) doKeyExchange() error {
 	dc.logout()
 	if err := dc.initNewRsaKeypair(); err != nil {
-		return err
+		return fmt.Errorf("could not initialise new RSA keypair: %w", err)
 	}
 
 	type handshakeParams struct {
@@ -201,17 +202,17 @@ func (dc *deviceConnection) doKeyExchange() error {
 		},
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("could not marshal key exchange request body: %w", err)
 	}
 	result, err := dc.exchange(handshakeBody)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not perform key exchange POST request: %w", err)
 	}
 
 	remoteKey := result["key"].(string)
 	block, iv, err := cbcCipherAndIvFromHandshakeResponse(remoteKey, dc.privateKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not determine CBC parameters from key exchange response: %w", err)
 	}
 	dc.cbcIv = iv
 	dc.cbcCipher = block
@@ -236,7 +237,7 @@ func (dc *deviceConnection) hasValidSessionCookie() bool {
 func (dc *deviceConnection) doLogin() error {
 	if !dc.hasExchangedKeys() {
 		if err := dc.doKeyExchange(); err != nil {
-			return err
+			return fmt.Errorf("could not do key exchange before loggign in: %w", err)
 		}
 	}
 	dc.logout()
@@ -250,17 +251,17 @@ func (dc *deviceConnection) doLogin() error {
 		Password: base64.StdEncoding.EncodeToString([]byte(dc.password)),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("could not marshal login_device payload: %w", err)
 	}
 
 	passthroughResult, err := dc.exchange(passthroughBody)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not perform login POST request: %w", err)
 	}
 
 	responseResult, err := dc.unmarshalPassthroughResponse(passthroughResult)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not unmarshal login_device response: %w", err)
 	}
 	token := responseResult["token"].(string)
 	dc.addresses.appTokenUrl = dc.addresses.appUrl + "?token=" + token
@@ -277,21 +278,21 @@ func (dc *deviceConnection) makeApiCall(method string, params any) (map[string]i
 	if !dc.isLoggedIn() {
 		log.Println("Not logged in, will log in before making api request")
 		if err := dc.doLogin(); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not log in before making API call: %w", err)
 		}
 	}
 
 	passthroughBody, err := dc.marshalPassthroughPayload(method, params)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not marshal passthrough payload for %s: %w", method, err)
 	}
 	passthroughResult, err := dc.exchange(passthroughBody)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not perform %s POST request: %w", method, err)
 	}
 	responseResult, err := dc.unmarshalPassthroughResponse(passthroughResult)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not unmarshal passthrough respone for %s: %w", method, err)
 	}
 	return responseResult, nil
 }

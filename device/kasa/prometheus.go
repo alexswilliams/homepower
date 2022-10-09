@@ -1,11 +1,8 @@
 package kasa
 
 import (
-	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"homepower/types"
-	"strconv"
-	"strings"
 )
 
 type LatestDeviceReport struct {
@@ -26,7 +23,7 @@ func isLight(model types.DeviceType) bool {
 }
 
 func RegisterMetrics(registry prometheus.Registerer, dev types.DeviceConfig, lastDeviceReport *LatestDeviceReport) *prometheus.GaugeVec {
-	var constLabels = GenerateCommonLabels(dev)
+	var constLabels = types.GenerateCommonLabels(&dev)
 
 	if supportsEMeter(dev.Model) {
 		registerEMeterMetrics(registry, lastDeviceReport, constLabels)
@@ -78,16 +75,6 @@ func RegisterMetrics(registry prometheus.Registerer, dev types.DeviceConfig, las
 	})
 	registry.MustRegister(infoMetric)
 	return infoMetric
-}
-
-func GenerateCommonLabels(dev types.DeviceConfig) prometheus.Labels {
-	return prometheus.Labels{
-		"dev_room":      dev.Room,
-		"dev_name":      dev.Name,
-		"dev_ip":        dev.Ip,
-		"dev_full_name": strings.TrimSpace(fmt.Sprintf("%s %s", dev.Room, dev.Name)),
-		"is_light":      strconv.FormatBool(isLight(dev.Model)),
-	}
 }
 
 func registerSwitchMetrics(registry prometheus.Registerer, report *LatestDeviceReport, labels prometheus.Labels) {
