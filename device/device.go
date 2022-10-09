@@ -7,10 +7,10 @@ import (
 	"homepower/types"
 )
 
-func ExtractAllData(device *types.DeviceConfig) (*kasa.PeriodicDeviceReport, error) {
+func ExtractAllData(device *types.DeviceConfig) (*kasa.periodicDeviceReport, error) {
 	switch device.Model {
 	case types.KasaHS100, types.KasaHS110, types.KasaKL50B, types.KasaKL110B, types.KasaKL130B:
-		return kasa.ExtractAllData(device)
+		return kasa.extractAllData(device)
 	default:
 		return nil, errors.New("unknown device type")
 	}

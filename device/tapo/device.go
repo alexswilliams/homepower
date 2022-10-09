@@ -30,14 +30,38 @@ func NewDevice(email string, password string, config *types.DeviceConfig, regist
 	}, nil
 }
 
-type DeviceStatus struct {
-	Common
-	*SmartPlugInfo
-	*SmartBulbInfo
-	*EnergyMeterInfo
+func (dev *Device) PollDeviceAndUpdateMetrics() error {
+	var status = deviceStatus{}
+	if err := dev.populateDeviceInfo(&status); err != nil {
+		return fmt.Errorf("could not poll device info for %s (%s): %w", dev.deviceConfig.Ip, dev.deviceConfig.Name, err)
+	}
+	if hasEnergyMonitoring(dev.deviceConfig) {
+		if err := dev.populateEnergyInfo(&status); err != nil {
+			return fmt.Errorf("could not poll energy info for %s (%s): %w", dev.deviceConfig.Ip, dev.deviceConfig.Name, err)
+		}
+	}
+	if err := dev.metrics.updateMetrics(&status); err != nil {
+		return fmt.Errorf("could not update metrics for %s (%s): %w", dev.deviceConfig.Ip, dev.deviceConfig.Name, err)
+	}
+	return nil
 }
 
-type Common struct {
+func (dev *Device) ResetMetricsToRogueValues() {
+	dev.metrics.resetToRogueValues()
+}
+
+func (dev *Device) CommonMetricLabels() map[string]string {
+	return dev.metrics.commonLabels
+}
+
+type deviceStatus struct {
+	common
+	*smartPlugInfo
+	*smartBulbInfo
+	*energyMeterInfo
+}
+
+type common struct {
 	Alias           string
 	DeviceId        string
 	FirmwareVersion string
@@ -50,29 +74,28 @@ type Common struct {
 	SignalLevel     int
 	DeviceType      string // e.g. SMART.TAPOBULB, SMART.TAPOPLUG
 }
-type SmartPlugInfo struct {
+type smartPlugInfo struct {
 	RelayOn bool
 	OnTime  time.Duration
 }
-type SmartBulbInfo struct {
+type smartBulbInfo struct {
 	Brightness        int
 	ColourTemperature int
 	LightOn           bool
 	Hue               int
 	Saturation        int
 }
-type EnergyMeterInfo struct {
+type energyMeterInfo struct {
 	PowerMilliWatts      int
 	MonthEnergyWattHours int
 	TodayEnergyWattHours int
 }
 
-func (dev *Device) PopulateDeviceInfo(status *DeviceStatus) error {
+func (dev *Device) populateDeviceInfo(status *deviceStatus) error {
 	responseResult, err := dev.connection.makeApiCall("get_device_info", nil)
 	if err != nil {
 		return fmt.Errorf("could not make API call while fetching device info: %w", err)
 	}
-	// log.Println(responseResult)
 
 	nicknameBase64 := responseResult["nickname"].(string)
 	if alias, err := base64.StdEncoding.DecodeString(nicknameBase64); err == nil {
@@ -92,7 +115,7 @@ func (dev *Device) PopulateDeviceInfo(status *DeviceStatus) error {
 	status.DeviceType = responseResult["type"].(string)
 
 	if status.DeviceType == "SMART.TAPOBULB" {
-		status.SmartBulbInfo = &SmartBulbInfo{
+		status.smartBulbInfo = &smartBulbInfo{
 			Brightness:        int(responseResult["brightness"].(float64)),
 			ColourTemperature: int(responseResult["color_temp"].(float64)),
 			LightOn:           responseResult["device_on"].(bool),
@@ -100,7 +123,7 @@ func (dev *Device) PopulateDeviceInfo(status *DeviceStatus) error {
 			Saturation:        int(responseResult["saturation"].(float64)),
 		}
 	} else if status.DeviceType == "SMART.TAPOPLUG" {
-		status.SmartPlugInfo = &SmartPlugInfo{
+		status.smartPlugInfo = &smartPlugInfo{
 			RelayOn: responseResult["device_on"].(bool),
 			OnTime:  time.Duration(int64(responseResult["on_time"].(float64))) * time.Second,
 		}
@@ -108,37 +131,16 @@ func (dev *Device) PopulateDeviceInfo(status *DeviceStatus) error {
 	return nil
 }
 
-func (dev *Device) PopulateEnergyInfo(status *DeviceStatus) error {
+func (dev *Device) populateEnergyInfo(status *deviceStatus) error {
 	responseResult, err := dev.connection.makeApiCall("get_energy_usage", nil)
 	if err != nil {
 		return fmt.Errorf("could not make API call while fetching energy usage: %w", err)
 	}
-	// log.Println(responseResult)
-	status.EnergyMeterInfo = &EnergyMeterInfo{
+	status.energyMeterInfo = &energyMeterInfo{
 		PowerMilliWatts:      int(responseResult["current_power"].(float64)),
 		MonthEnergyWattHours: int(responseResult["month_energy"].(float64)),
 		TodayEnergyWattHours: int(responseResult["today_energy"].(float64)),
 	}
-	return nil
-}
-
-func (dev *Device) UpdateMetrics() error {
-	var status = DeviceStatus{}
-	if err := dev.PopulateDeviceInfo(&status); err != nil {
-		return fmt.Errorf("could not poll device info for %s (%s): %w", dev.deviceConfig.Ip, dev.deviceConfig.Name, err)
-	}
-	if hasEnergyMonitoring(dev.deviceConfig) {
-		if err := dev.PopulateEnergyInfo(&status); err != nil {
-			return fmt.Errorf("could not poll energy info for %s (%s): %w", dev.deviceConfig.Ip, dev.deviceConfig.Name, err)
-		}
-	}
-	if err := dev.metrics.updateMetrics(&status); err != nil {
-		return fmt.Errorf("could not update metrics for %s (%s): %w", dev.deviceConfig.Ip, dev.deviceConfig.Name, err)
-	}
-	//log.Printf("%+v", status)
-	//log.Printf("%+v", status.SmartBulbInfo)
-	//log.Printf("%+v", status.SmartPlugInfo)
-	//log.Printf("%+v", status.EnergyMeterInfo)
 	return nil
 }
 

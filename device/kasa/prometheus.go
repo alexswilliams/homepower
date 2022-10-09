@@ -1,196 +1,247 @@
 package kasa
 
 import (
+	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"homepower/types"
+	"strconv"
+	"time"
 )
 
-type LatestDeviceReport struct {
-	Latest *PeriodicDeviceReport // nil indicates no scrape has happened, or the scrape failed
+type prometheusMetrics struct {
+	isSwitch                       bool
+	isLight                        bool
+	isVariableTemperature          bool
+	isColoured                     bool
+	hasPowerMonitoring             bool
+	hasTotalEnergyMonitoring       bool
+	hasCurrentAndVoltageMonitoring bool
+	commonLabels                   prometheus.Labels
+	updateInfoMetric               func(status *periodicDeviceReport) error
+	updateActiveMode               func(status *periodicDeviceReport) error
+	wifiRssi                       *prometheus.Gauge
+	deviceTurnedOn                 *prometheus.Gauge
+	ledTurnedOn                    *prometheus.Gauge                        // only for switches
+	onTime                         *prometheus.Gauge                        // only for switches
+	isUpdating                     *prometheus.Gauge                        // only for switches
+	updateLightMode                func(status *periodicDeviceReport) error // only for lights
+	brightness                     *prometheus.Gauge                        // only for lights
+	colourTemperature              *prometheus.Gauge                        // only for lights
+	hue                            *prometheus.Gauge                        // only for lights
+	saturation                     *prometheus.Gauge                        // only for lights
+	powerMilliWatts                *prometheus.Gauge                        // HS110, KL50, KL110, KL130,
+	voltageMilliVolts              *prometheus.Gauge                        // HS110 only
+	currentMilliAmps               *prometheus.Gauge                        // HS110 only
+	totalWattHours                 *prometheus.Gauge                        // HS110, KL50, and maybe KL130
 }
 
-func supportsEMeter(model types.DeviceType) bool {
-	switch model {
-	case types.KasaHS110, types.KasaKL50B, types.KasaKL110B, types.KasaKL130B:
-		return true
-	default:
-		return false
+func registerMetrics(registry prometheus.Registerer, config *types.DeviceConfig) prometheusMetrics {
+	commonLabels := types.GenerateCommonLabels(config)
+	metrics := prometheusMetrics{
+		isSwitch:                       isSwitch(config),
+		isLight:                        isLight(config),
+		isVariableTemperature:          isLightVariableTemperature(config),
+		isColoured:                     isLightColoured(config),
+		hasPowerMonitoring:             hasPowerMonitoring(config),
+		hasTotalEnergyMonitoring:       hasTotalEnergyMonitoring(config),
+		hasCurrentAndVoltageMonitoring: hasCurrentAndVoltageMonitoring(config),
+
+		commonLabels:     commonLabels,
+		updateInfoMetric: registerInfoMetricUpdater(registry, commonLabels, isLight(config)),
+		updateActiveMode: registerModeMetricUpdater(registry, commonLabels, "active_mode", "mode", func(report *periodicDeviceReport) string {
+			return report.ActiveMode
+		}),
+		wifiRssi:       newGauge(registry, commonLabels, "wifi_rssi_db"),
+		deviceTurnedOn: newGauge(registry, commonLabels, "device_turned_on_bool"),
+	}
+	if metrics.isSwitch {
+		metrics.ledTurnedOn = newGauge(registry, commonLabels, "led_turned_on_bool")
+		metrics.onTime = newGauge(registry, commonLabels, "switched_on_time_seconds")
+		metrics.isUpdating = newGauge(registry, commonLabels, "is_updating_bool")
+	}
+	if metrics.isLight {
+		metrics.updateLightMode = registerModeMetricUpdater(registry, commonLabels, "bulb_mode", "mode", func(report *periodicDeviceReport) string {
+			return report.smartBulbInfo.Mode
+		})
+		metrics.brightness = newGauge(registry, commonLabels, "bulb_brightness_percent")
+		if metrics.isVariableTemperature {
+			metrics.colourTemperature = newGauge(registry, commonLabels, "bulb_colour_temperature_kelvin")
+		}
+		if metrics.isColoured {
+			metrics.hue = newGauge(registry, commonLabels, "bulb_hue")
+			metrics.saturation = newGauge(registry, commonLabels, "bulb_saturation_percent")
+		}
+	}
+	if metrics.hasPowerMonitoring {
+		metrics.powerMilliWatts = newGauge(registry, commonLabels, "em_power_mw")
+	}
+	if metrics.hasTotalEnergyMonitoring {
+		metrics.totalWattHours = newGauge(registry, commonLabels, "em_total_energy_wh")
+	}
+	if metrics.hasCurrentAndVoltageMonitoring {
+		metrics.currentMilliAmps = newGauge(registry, commonLabels, "em_current_ma")
+		metrics.voltageMilliVolts = newGauge(registry, commonLabels, "em_voltage_mv")
+	}
+	metrics.resetToRogueValues()
+	return metrics
+}
+
+func newGauge(registry prometheus.Registerer, commonLabels prometheus.Labels, name string) *prometheus.Gauge {
+	var gauge = prometheus.NewGauge(prometheus.GaugeOpts{Name: name, ConstLabels: commonLabels, Namespace: "kasa"})
+	registry.MustRegister(gauge)
+	return &gauge
+}
+func setIfPresent(gauge *prometheus.Gauge, value float64) {
+	if gauge != nil {
+		(*gauge).Set(value)
 	}
 }
-
-func isLight(model types.DeviceType) bool {
-	return model == types.KasaKL50B || model == types.KasaKL110B || model == types.KasaKL130B
-}
-
-func RegisterMetrics(registry prometheus.Registerer, dev types.DeviceConfig, lastDeviceReport *LatestDeviceReport) *prometheus.GaugeVec {
-	var constLabels = types.GenerateCommonLabels(&dev)
-
-	if supportsEMeter(dev.Model) {
-		registerEMeterMetrics(registry, lastDeviceReport, constLabels)
-	}
-	if isLight(dev.Model) {
-		registerLightMetrics(registry, lastDeviceReport, constLabels, dev.Model == types.KasaKL130B, dev.Model == types.KasaKL130B)
+func setFromBool(gauge *prometheus.Gauge, value bool) {
+	if value {
+		setIfPresent(gauge, 1.0)
 	} else {
-		registerSwitchMetrics(registry, lastDeviceReport, constLabels)
+		setIfPresent(gauge, 0.0)
 	}
+}
+func setFromInt(gauge *prometheus.Gauge, value int) {
+	setIfPresent(gauge, float64(value))
+}
+func setFromDurationAsSeconds(gauge *prometheus.Gauge, value time.Duration) {
+	setIfPresent(gauge, value.Seconds())
+}
 
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_wifi_rssi", ConstLabels: constLabels}, func() float64 {
-		if lastDeviceReport.Latest == nil {
-			return +1.0 // rssi is always negative, so this indicates a scrape failure
-		} else {
-			return float64(lastDeviceReport.Latest.WifiSignalStrength)
+func (metrics *prometheusMetrics) updateMetrics(status *periodicDeviceReport) error {
+	if status == nil {
+		metrics.resetToRogueValues()
+	} else {
+		setFromInt(metrics.wifiRssi, status.WifiRssi)
+		if metrics.isSwitch && status.smartPlugInfo != nil {
+			setFromBool(metrics.deviceTurnedOn, status.RelayOn)
+			setFromBool(metrics.ledTurnedOn, status.LedOn)
+			setFromDurationAsSeconds(metrics.onTime, status.OnTime)
+			setFromBool(metrics.isUpdating, status.Updating)
 		}
-	}))
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_last_scrape_duration_ms", ConstLabels: constLabels}, func() float64 {
-		if lastDeviceReport.Latest == nil {
-			return -1.0 // durations are always positive (mumble, leap seconds), so this indicates a scrape failure
-		} else {
-			return float64(lastDeviceReport.Latest.ScrapeDuration.Milliseconds())
+		if metrics.isLight && status.smartBulbInfo != nil {
+			setFromBool(metrics.deviceTurnedOn, status.IsOn)
+			setFromInt(metrics.brightness, status.Brightness)
+			if metrics.isVariableTemperature {
+				setFromInt(metrics.colourTemperature, status.ColourTemperature)
+			}
+			if metrics.isColoured {
+				setFromInt(metrics.hue, status.Hue)
+				setFromInt(metrics.saturation, status.Saturation)
+			}
 		}
-	}))
+		if metrics.hasPowerMonitoring {
+			setFromInt(metrics.powerMilliWatts, status.PowerMilliWatts)
+		}
+		if metrics.hasTotalEnergyMonitoring {
+			setFromInt(metrics.totalWattHours, status.TotalEnergyWattHours)
+		}
+		if metrics.hasCurrentAndVoltageMonitoring {
+			setFromInt(metrics.currentMilliAmps, status.CurrentMilliAmps)
+			setFromInt(metrics.voltageMilliVolts, status.VoltageMilliVolts)
+		}
+		if err := metrics.updateInfoMetric(status); err != nil {
+			return fmt.Errorf("could not update info metric: %w", err)
+		}
+		if err := metrics.updateActiveMode(status); err != nil {
+			return fmt.Errorf("could not update active mode metric: %w", err)
+		}
+		if metrics.updateLightMode != nil {
+			if err := metrics.updateLightMode(status); err != nil {
+				return fmt.Errorf("could not update active mode metric: %w", err)
+			}
+		}
+	}
+	return nil
+}
 
-	var infoMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name:        "kasa_dev_info",
-		ConstLabels: constLabels,
-	}, []string{
-		"kasa_active_mode",
-		"kasa_alias",
-		"kasa_model_description",
-		"kasa_device_id",
-		"kasa_hardware_id",
-		"kasa_dev_mac",
-		"kasa_model_name",
-		"kasa_dev_type",
-		"kasa_light_device_state",
-		"kasa_light_is_dimmable",
-		"kasa_light_is_colour",
-		"kasa_light_is_variable_temp",
-		"kasa_light_on_mode",
-		"kasa_light_beam_angle",
-		"kasa_light_min_voltage",
-		"kasa_light_max_voltage",
-		"kasa_light_wattage",
-		"kasa_light_incandescent_equiv",
-		"kasa_light_max_lumens",
+func (metrics *prometheusMetrics) resetToRogueValues() {
+	_ = metrics.updateInfoMetric(nil)
+	_ = metrics.updateActiveMode(nil)
+	if metrics.updateLightMode != nil {
+		_ = metrics.updateLightMode(nil)
+	}
+	setIfPresent(metrics.wifiRssi, +1.0) // nb: positive rogue value
+	setIfPresent(metrics.deviceTurnedOn, -1.0)
+	setIfPresent(metrics.ledTurnedOn, -1.0)
+	setIfPresent(metrics.onTime, -1.0)
+	setIfPresent(metrics.isUpdating, -1.0)
+	setIfPresent(metrics.brightness, -1.0)
+	setIfPresent(metrics.colourTemperature, -1.0)
+	setIfPresent(metrics.hue, -1.0)
+	setIfPresent(metrics.saturation, -1.0)
+	setIfPresent(metrics.powerMilliWatts, -1.0)
+	setIfPresent(metrics.voltageMilliVolts, -1.0)
+	setIfPresent(metrics.currentMilliAmps, -1.0)
+	setIfPresent(metrics.totalWattHours, -1.0)
+}
+
+func registerInfoMetricUpdater(registry prometheus.Registerer, commonLabels prometheus.Labels, isLight bool) func(status *periodicDeviceReport) error {
+	var infoMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "device_info", Namespace: "kasa", ConstLabels: commonLabels}, []string{
+		"alias", "device_id", "firmware_version", "hardware_id", "mac_address", "model_name", "model_description", "oem_id", "device_type",
 	})
 	registry.MustRegister(infoMetric)
-	return infoMetric
-}
-
-func registerSwitchMetrics(registry prometheus.Registerer, report *LatestDeviceReport, labels prometheus.Labels) {
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_dev_is_on", ConstLabels: labels}, func() float64 {
-		if report.Latest == nil || report.Latest.SmartPlugSwitchInfo == nil {
-			return -1.0 // normal values are 0.0 or 1.0
-		} else {
-			return boolToFloat(report.Latest.SmartPlugSwitchInfo.RelayOn)
-		}
-	}))
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_led_is_on", ConstLabels: labels}, func() float64 {
-		if report.Latest == nil || report.Latest.SmartPlugSwitchInfo == nil {
-			return -1.0 // normal values are 0.0 or 1.0
-		} else {
-			return boolToFloat(report.Latest.SmartPlugSwitchInfo.LedOn)
-		}
-	}))
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_on_time_seconds", ConstLabels: labels}, func() float64 {
-		if report.Latest == nil || report.Latest.SmartPlugSwitchInfo == nil {
-			return -1.0 // i'm hoping durations as reported by the device are always positive, so this is a rogue value
-		} else {
-			return report.Latest.SmartPlugSwitchInfo.OnTime.Seconds()
-		}
-	}))
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_updating", ConstLabels: labels}, func() float64 {
-		if report.Latest == nil || report.Latest.SmartPlugSwitchInfo == nil {
-			return -1.0 // normal values are 0.0 or 1.0
-		} else {
-			return boolToFloat(report.Latest.SmartPlugSwitchInfo.Updating)
-		}
-	}))
-}
-
-func registerLightMetrics(registry prometheus.Registerer, report *LatestDeviceReport, labels prometheus.Labels, isColour bool, isVariableTemp bool) {
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_dev_is_on", ConstLabels: labels}, func() float64 {
-		if report.Latest == nil || report.Latest.SmartLightInfo == nil {
-			return -1.0 // normal values are 0.0 or 1.0
-		} else {
-			return boolToFloat(report.Latest.SmartLightInfo.IsOn)
-		}
-	}))
-	if isColour {
-		registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_hue", ConstLabels: labels}, func() float64 {
-			if report.Latest == nil || report.Latest.SmartLightInfo == nil {
-				return -1.0 // this indicates a scrape failure
-			} else if !report.Latest.SmartLightInfo.IsColour {
-				return -2.0 // this indicates the device does not support colour
-			} else {
-				return float64(report.Latest.SmartLightInfo.Hue)
-			}
-		}))
-		registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_saturation", ConstLabels: labels}, func() float64 {
-			if report.Latest == nil || report.Latest.SmartLightInfo == nil {
-				return -1.0 // this indicates a scrape failure
-			} else if !report.Latest.SmartLightInfo.IsColour {
-				return -2.0 // this indicates the device does not support colour
-			} else {
-				return float64(report.Latest.SmartLightInfo.Saturation)
-			}
-		}))
+	var bulbInfoMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "bulb_info", Namespace: "kasa", ConstLabels: commonLabels}, []string{
+		"is_dimmable", "is_colour", "is_variable_temp", "beam_angle", "min_voltage", "max_voltage", "wattage", "incandescent_equiv", "max_lumens",
+	})
+	if isLight {
+		registry.MustRegister(bulbInfoMetric)
 	}
-	if isVariableTemp {
-		registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_colour_temperature", ConstLabels: labels}, func() float64 {
-			if report.Latest == nil || report.Latest.SmartLightInfo == nil {
-				return -1.0 // this indicates a scrape failure
-			} else if !report.Latest.SmartLightInfo.IsVariableColourTemperature {
-				return -2.0 // this indicates the device does not support variable colour temperatures
-			} else {
-				return float64(report.Latest.SmartLightInfo.ColourTemperature)
+	return func(status *periodicDeviceReport) error {
+		infoMetric.Reset()
+		bulbInfoMetric.Reset()
+		if status != nil {
+			metricWithLabelValues, err := infoMetric.GetMetricWith(prometheus.Labels{
+				"alias":             status.Alias,
+				"device_id":         status.DeviceId,
+				"firmware_version":  status.SoftwareVersion,
+				"hardware_id":       status.HardwareId,
+				"mac_address":       status.Mac,
+				"model_name":        status.ModelName,
+				"model_description": status.ModelDescription,
+				"oem_id":            status.OemId,
+				"device_type":       status.DeviceType,
+			})
+			if err != nil {
+				return fmt.Errorf("could not generate label values for info metric: %w", err)
 			}
-		}))
-	}
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_brightness", ConstLabels: labels}, func() float64 {
-		if report.Latest == nil || report.Latest.SmartLightInfo == nil {
-			return -1.0
-		} else {
-			return float64(report.Latest.SmartLightInfo.Brightness)
+			metricWithLabelValues.Set(1.0)
+			if isLight {
+				bulbMetricWithLabelValues, err := bulbInfoMetric.GetMetricWith(prometheus.Labels{
+					"is_dimmable":        strconv.FormatBool(status.IsDimmable),
+					"is_colour":          strconv.FormatBool(status.IsColour),
+					"is_variable_temp":   strconv.FormatBool(status.IsVariableColourTemperature),
+					"beam_angle":         strconv.Itoa(status.LampBeamAngle),
+					"min_voltage":        strconv.Itoa(status.MinimumVoltage),
+					"max_voltage":        strconv.Itoa(status.MaximumVoltage),
+					"wattage":            strconv.Itoa(status.Wattage),
+					"incandescent_equiv": strconv.Itoa(status.IncandescentEquivalent),
+					"max_lumens":         strconv.Itoa(status.MaximumLumens),
+				})
+				if err != nil {
+					return fmt.Errorf("could not generate label values for bulb metric: %w", err)
+				}
+				bulbMetricWithLabelValues.Set(1.0)
+			}
 		}
-	}))
-}
-
-func boolToFloat(on bool) float64 {
-	if on {
-		return 1.0
-	} else {
-		return 0.0
+		return nil
 	}
 }
 
-func registerEMeterMetrics(registry prometheus.Registerer, report *LatestDeviceReport, labels prometheus.Labels) {
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_current_ma", ConstLabels: labels}, func() float64 {
-		if report.Latest == nil || report.Latest.EnergyMeterInfo == nil {
-			return -1.0
-		} else {
-			return float64(report.Latest.EnergyMeterInfo.CurrentMilliAmps)
+func registerModeMetricUpdater(registry prometheus.Registerer, commonLabels prometheus.Labels, name string, labelName string, jsonKey func(report *periodicDeviceReport) string) func(status *periodicDeviceReport) error {
+	var metric = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: name, Namespace: "kasa", ConstLabels: commonLabels}, []string{labelName})
+	registry.MustRegister(metric)
+	return func(status *periodicDeviceReport) error {
+		metric.Reset()
+		if status != nil {
+			metricWithLabelValues, err := metric.GetMetricWith(prometheus.Labels{labelName: jsonKey(status)})
+			if err != nil {
+				return fmt.Errorf("could not generate label values for info metric: %w", err)
+			}
+			metricWithLabelValues.Set(1.0)
 		}
-	}))
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_power_mw", ConstLabels: labels}, func() float64 {
-		if report.Latest == nil || report.Latest.EnergyMeterInfo == nil {
-			return -1.0
-		} else {
-			return float64(report.Latest.EnergyMeterInfo.PowerMilliWatts)
-		}
-	}))
-	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "kasa_voltage_mv", ConstLabels: labels}, func() float64 {
-		if report.Latest == nil || report.Latest.EnergyMeterInfo == nil {
-			return -1.0
-		} else {
-			return float64(report.Latest.EnergyMeterInfo.VoltageMilliVolts)
-		}
-	}))
-	registry.MustRegister(prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "kasa_totalEnergy_wh", ConstLabels: labels}, func() float64 {
-		if report.Latest == nil || report.Latest.EnergyMeterInfo == nil {
-			return -1.0
-		} else {
-			return float64(report.Latest.EnergyMeterInfo.TotalEnergyWattHours)
-		}
-	}))
+		return nil
+	}
 }

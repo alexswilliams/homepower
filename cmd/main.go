@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"homepower/config"
-	"homepower/device"
 	"homepower/device/kasa"
 	"homepower/device/tapo"
 	"homepower/types"
@@ -24,86 +24,18 @@ func main() {
 	var configs = config.StaticAppConfig
 	registry := prometheus.NewRegistry()
 
-	doThingForDevice(configs.TapoCredentials, &types.DeviceConfig{Name: "Backlight", Model: types.TapoL900, Ip: "192.168.1.56"}, registry)
-	doThingForDevice(configs.TapoCredentials, &types.DeviceConfig{Name: "Slow Cooker", Model: types.TapoP100, Ip: "192.168.1.64"}, registry)
-	doThingForDevice(configs.TapoCredentials, &types.DeviceConfig{Name: "Fridge", Model: types.TapoP110, Ip: "192.168.1.67"}, registry)
-	doThingForDevice(configs.TapoCredentials, &types.DeviceConfig{Name: "Washer", Model: types.TapoP110, Ip: "192.168.1.68"}, registry)
-
-	if true {
-		return
-	}
-
 	var shouldExit = closeOnSigInt(make(chan bool, 1)) // is closed by SIGINT
 	var allExited sync.WaitGroup
 	allExited.Add(len(configs.Devices))
 
-	for _, dev := range configs.Devices {
-		var lastDeviceReport = kasa.LatestDeviceReport{}
-		var infoMetric = device.RegisterMetrics(registry, dev, &lastDeviceReport)
-		var successMetric = prometheus.NewGauge(prometheus.GaugeOpts{
-			Name:        "kasa_scrape_success",
-			ConstLabels: types.GenerateCommonLabels(&dev),
-		})
-		registry.MustRegister(successMetric)
-		var lastInfoMetric *prometheus.GaugeVec = nil
+	for _, deviceConfig := range configs.Devices {
+		pollableDevice, err := deviceFactory(deviceConfig, configs, registry)
+		if err != nil {
+			panic(err)
+		}
 
-		go pollDevice(&allExited, shouldExit, dev, func(report *kasa.PeriodicDeviceReport) {
-			lastDeviceReport.Latest = report
-			if report == nil {
-				successMetric.Set(0.0)
-			} else {
-				successMetric.Set(1.0)
-			}
-
-			if lastInfoMetric != nil {
-				lastInfoMetric.Reset()
-				lastInfoMetric = nil
-			}
-			// TODO: this stuff really should be here - but until another manufacturer is added, "it works"
-			if report != nil {
-				thisInfoMetric := infoMetric.MustCurryWith(prometheus.Labels{
-					"kasa_active_mode":       report.ActiveMode,
-					"kasa_alias":             report.Alias,
-					"kasa_model_description": report.ModelDescription,
-					"kasa_device_id":         report.DeviceId,
-					"kasa_hardware_id":       report.HardwareId,
-					"kasa_dev_mac":           report.Mac,
-					"kasa_model_name":        report.ModelName,
-					"kasa_dev_type":          report.DeviceType,
-				})
-				if report.SmartLightInfo != nil {
-					thisInfoMetric = thisInfoMetric.MustCurryWith(prometheus.Labels{
-						"kasa_light_device_state":       report.SmartLightInfo.DeviceState,
-						"kasa_light_is_dimmable":        strconv.FormatBool(report.SmartLightInfo.IsDimmable),
-						"kasa_light_is_colour":          strconv.FormatBool(report.SmartLightInfo.IsColour),
-						"kasa_light_is_variable_temp":   strconv.FormatBool(report.SmartLightInfo.IsVariableColourTemperature),
-						"kasa_light_on_mode":            report.SmartLightInfo.Mode,
-						"kasa_light_beam_angle":         strconv.Itoa(report.SmartLightInfo.LampBeamAngle),
-						"kasa_light_min_voltage":        strconv.Itoa(report.SmartLightInfo.MinimumVoltage),
-						"kasa_light_max_voltage":        strconv.Itoa(report.SmartLightInfo.MaximumVoltage),
-						"kasa_light_wattage":            strconv.Itoa(report.SmartLightInfo.Wattage),
-						"kasa_light_incandescent_equiv": strconv.Itoa(report.SmartLightInfo.IncandescentEquivalent),
-						"kasa_light_max_lumens":         strconv.Itoa(report.SmartLightInfo.MaximumLumens),
-					})
-				} else {
-					thisInfoMetric = thisInfoMetric.MustCurryWith(prometheus.Labels{
-						"kasa_light_device_state":       "n/a",
-						"kasa_light_is_dimmable":        "n/a",
-						"kasa_light_is_colour":          "n/a",
-						"kasa_light_is_variable_temp":   "n/a",
-						"kasa_light_on_mode":            "n/a",
-						"kasa_light_beam_angle":         "n/a",
-						"kasa_light_min_voltage":        "n/a",
-						"kasa_light_max_voltage":        "n/a",
-						"kasa_light_wattage":            "n/a",
-						"kasa_light_incandescent_equiv": "n/a",
-						"kasa_light_max_lumens":         "n/a",
-					})
-				}
-				thisInfoMetric.With(prometheus.Labels{}).Set(1.0)
-				lastInfoMetric = thisInfoMetric
-			}
-		})
+		scrapeMetrics := registerScrapeMetrics(pollableDevice, registry)
+		go pollDevice(&allExited, shouldExit, deviceConfig, pollableDevice, scrapeMetrics)
 	}
 
 	mux := http.NewServeMux()
@@ -114,14 +46,14 @@ func main() {
 	os.Exit(0)
 }
 
-func doThingForDevice(creds config.Credentials, config *types.DeviceConfig, registry prometheus.Registerer) {
-	d, err := tapo.NewDevice(creds.EmailAddress, creds.Password, config, registry)
-	if err != nil {
-		panic(err)
-	}
-
-	if err := d.UpdateMetrics(); err != nil {
-		panic(err)
+func deviceFactory(deviceConfig types.DeviceConfig, configs config.AllConfig, registry prometheus.Registerer) (types.PollableDevice, error) {
+	switch types.DriverFor(deviceConfig.Model) {
+	case types.Kasa:
+		return kasa.NewDevice(&deviceConfig, registry)
+	case types.Tapo:
+		return tapo.NewDevice(configs.TapoCredentials.EmailAddress, configs.TapoCredentials.Password, &deviceConfig, registry)
+	default:
+		return nil, errors.New("unknown device type")
 	}
 }
 
@@ -151,31 +83,52 @@ func startHttpServer(port int16, mux *http.ServeMux, shouldExit chan bool) {
 	log.Println(server.ListenAndServe())
 }
 
-func pollDevice(
-	allExited *sync.WaitGroup,
-	shouldExit <-chan bool,
-	dev types.DeviceConfig,
-	setLatestReport func(report *kasa.PeriodicDeviceReport),
-) {
-	println("Polling", dev.Room, dev.Name, "every 10 seconds")
+func pollDevice(allExited *sync.WaitGroup, shouldExit <-chan bool, deviceConfig types.DeviceConfig, dev types.PollableDevice, scrapeMetrics prometheusScrapeMetrics) {
+	println("Polling", deviceConfig.Room, deviceConfig.Name, "every 10 seconds")
 	defer allExited.Done()
 	ticker := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-shouldExit:
-			println("Received should exit signal for", dev.Room, dev.Name)
+			println("Received should exit signal for", deviceConfig.Room, deviceConfig.Name)
 			ticker.Stop()
 			return
 		case <-ticker.C:
 			time.Sleep(time.Duration(rand.Intn(2000)) * time.Millisecond)
-			report, err := device.ExtractAllData(&dev)
-			setLatestReport(report)
-			if err != nil {
-				setLatestReport(nil)
+
+			timeBefore := time.Now()
+			err := dev.PollDeviceAndUpdateMetrics()
+			scrapeMetrics.lastScrapeDuration.Set(time.Since(timeBefore).Seconds())
+
+			if err == nil {
+				scrapeMetrics.successes.Inc()
+			} else {
+				scrapeMetrics.failures.Inc()
+				dev.ResetMetricsToRogueValues()
 				if err.Error() != "unknown device type" {
-					println("Could not query", dev.Room, dev.Name, err.Error())
+					log.Println("Could not query", deviceConfig.Room, deviceConfig.Name, err.Error())
 				}
 			}
 		}
+	}
+}
+
+type prometheusScrapeMetrics struct {
+	successes          prometheus.Counter
+	failures           prometheus.Counter
+	lastScrapeDuration prometheus.Gauge
+}
+
+func registerScrapeMetrics(dev types.PollableDevice, registry prometheus.Registerer) prometheusScrapeMetrics {
+	successes := prometheus.NewCounter(prometheus.CounterOpts{Namespace: "common", Name: "scrape_successes_total", ConstLabels: dev.CommonMetricLabels()})
+	registry.MustRegister(successes)
+	failures := prometheus.NewCounter(prometheus.CounterOpts{Namespace: "common", Name: "scrape_failures_total", ConstLabels: dev.CommonMetricLabels()})
+	registry.MustRegister(failures)
+	lastScrapeDuration := prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "common", Name: "last_scrape_duration_ms", ConstLabels: dev.CommonMetricLabels()})
+	registry.MustRegister(lastScrapeDuration)
+	return prometheusScrapeMetrics{
+		successes:          successes,
+		failures:           failures,
+		lastScrapeDuration: lastScrapeDuration,
 	}
 }

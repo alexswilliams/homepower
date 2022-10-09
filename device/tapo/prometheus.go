@@ -10,7 +10,8 @@ type prometheusMetrics struct {
 	isLight              bool
 	isSwitch             bool
 	hasEnergyMonitoring  bool
-	updateInfoMetric     func(status *DeviceStatus) error
+	commonLabels         prometheus.Labels
+	updateInfoMetric     func(status *deviceStatus) error
 	overheated           *prometheus.Gauge
 	wifiRssi             *prometheus.Gauge
 	signalLevel          *prometheus.Gauge
@@ -30,6 +31,7 @@ func registerMetrics(registry prometheus.Registerer, commonLabels prometheus.Lab
 		isLight:             isLight,
 		isSwitch:            isSwitch,
 		hasEnergyMonitoring: hasEnergyMonitoring,
+		commonLabels:        commonLabels,
 		updateInfoMetric:    registerInfoMetricUpdater(registry, commonLabels),
 		overheated:          newGauge(registry, commonLabels, "overheated_bool"),
 		wifiRssi:            newGauge(registry, commonLabels, "wifi_rssi_db"),
@@ -37,7 +39,7 @@ func registerMetrics(registry prometheus.Registerer, commonLabels prometheus.Lab
 		deviceTurnedOn:      newGauge(registry, commonLabels, "device_turned_on_bool"),
 	}
 	if isSwitch {
-		metrics.onTime = newGauge(registry, commonLabels, "switch_on_time_seconds")
+		metrics.onTime = newGauge(registry, commonLabels, "switched_on_time_seconds")
 	}
 	if isLight {
 		metrics.brightness = newGauge(registry, commonLabels, "bulb_brightness_percent")
@@ -60,39 +62,40 @@ func newGauge(registry prometheus.Registerer, commonLabels prometheus.Labels, na
 	return &gauge
 }
 
-func (metrics *prometheusMetrics) updateMetrics(status *DeviceStatus) error {
-	if err := metrics.updateInfoMetric(nil); err != nil {
-		return fmt.Errorf("could not update info metric: %w", err)
-	}
+func (metrics *prometheusMetrics) updateMetrics(status *deviceStatus) error {
 	if status == nil {
 		metrics.resetToRogueValues()
 	} else {
 		setFromBool(metrics.overheated, status.Overheated)
 		setFromInt(metrics.wifiRssi, status.WifiRssi)
 		setFromInt(metrics.signalLevel, status.SignalLevel)
-		if metrics.isSwitch && status.SmartPlugInfo != nil {
+		if metrics.isSwitch && status.smartPlugInfo != nil {
 			setFromBool(metrics.deviceTurnedOn, status.RelayOn)
 			setFromDurationAsSeconds(metrics.onTime, status.OnTime)
 		}
-		if metrics.isLight && status.SmartBulbInfo != nil {
+		if metrics.isLight && status.smartBulbInfo != nil {
 			setFromBool(metrics.deviceTurnedOn, status.LightOn)
 			setFromInt(metrics.brightness, status.Brightness)
 			setFromInt(metrics.colourTemperature, status.ColourTemperature)
 			setFromInt(metrics.hue, status.Hue)
 			setFromInt(metrics.saturation, status.Saturation)
 		}
-		if metrics.hasEnergyMonitoring && status.EnergyMeterInfo != nil {
+		if metrics.hasEnergyMonitoring && status.energyMeterInfo != nil {
 			setFromInt(metrics.powerMilliWatts, status.PowerMilliWatts)
 			setFromInt(metrics.monthEnergyWattHours, status.MonthEnergyWattHours)
 			setFromInt(metrics.todayEnergyWattHours, status.TodayEnergyWattHours)
+		}
+		if err := metrics.updateInfoMetric(status); err != nil {
+			return fmt.Errorf("could not update info metric: %w", err)
 		}
 	}
 	return nil
 }
 
 func (metrics *prometheusMetrics) resetToRogueValues() {
+	_ = metrics.updateInfoMetric(nil)
 	setIfPresent(metrics.overheated, -1.0)
-	setIfPresent(metrics.wifiRssi, 1.0) // nb: positive rogue value
+	setIfPresent(metrics.wifiRssi, +1.0) // nb: positive rogue value
 	setIfPresent(metrics.signalLevel, -1.0)
 	setIfPresent(metrics.deviceTurnedOn, -1.0)
 	setIfPresent(metrics.onTime, -1.0)
@@ -124,7 +127,7 @@ func setFromDurationAsSeconds(gauge *prometheus.Gauge, value time.Duration) {
 	setIfPresent(gauge, value.Seconds())
 }
 
-func registerInfoMetricUpdater(registry prometheus.Registerer, commonLabels prometheus.Labels) func(status *DeviceStatus) error {
+func registerInfoMetricUpdater(registry prometheus.Registerer, commonLabels prometheus.Labels) func(status *deviceStatus) error {
 	var infoMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name:        "device_info",
 		Namespace:   "tapo",
@@ -133,7 +136,7 @@ func registerInfoMetricUpdater(registry prometheus.Registerer, commonLabels prom
 		"alias", "device_id", "firmware_version", "hardware_id", "mac_address", "model_name", "oem_id", "device_type",
 	})
 	registry.MustRegister(infoMetric)
-	return func(status *DeviceStatus) error {
+	return func(status *deviceStatus) error {
 		infoMetric.Reset()
 		if status != nil {
 			metricWithLabelValues, err := infoMetric.GetMetricWith(prometheus.Labels{
