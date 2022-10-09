@@ -112,7 +112,7 @@ func (dc *deviceConnection) devicePostUrl() string {
 	}
 }
 
-func (dc *deviceConnection) applyTapoHeadersTo(request *http.Request) {
+func (dc *deviceConnection) applyHeadersTo(request *http.Request) {
 	request.Header.Set("Referer", dc.addresses.baseUrl)
 	request.Header.Set("requestByApp", "true")
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
@@ -124,7 +124,7 @@ func (dc *deviceConnection) applyTapoHeadersTo(request *http.Request) {
 
 func (dc *deviceConnection) exchange(body []byte) (map[string]interface{}, error) {
 	request, err := http.NewRequest(http.MethodPost, dc.devicePostUrl(), bytes.NewReader(body))
-	dc.applyTapoHeadersTo(request)
+	dc.applyHeadersTo(request)
 
 	response, err := dc.client.Do(request)
 	if err != nil {

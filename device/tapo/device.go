@@ -12,7 +12,7 @@ import (
 type Device struct {
 	deviceConfig *types.DeviceConfig
 	connection   *deviceConnection
-	metrics      prometheusMetrics
+	metrics      *prometheusMetrics
 }
 
 func NewDevice(email string, password string, config *types.DeviceConfig, registry prometheus.Registerer) (*Device, error) {
@@ -142,16 +142,4 @@ func (dev *Device) populateEnergyInfo(status *deviceStatus) error {
 		TodayEnergyWattHours: int(responseResult["today_energy"].(float64)),
 	}
 	return nil
-}
-
-func isSwitch(config *types.DeviceConfig) bool {
-	return config.Model == types.TapoP100 || config.Model == types.TapoP110
-}
-
-func isLight(config *types.DeviceConfig) bool {
-	return config.Model == types.TapoL900
-}
-
-func hasEnergyMonitoring(config *types.DeviceConfig) bool {
-	return config.Model == types.TapoP110
 }

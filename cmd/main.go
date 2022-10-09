@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"homepower/config"
-	"homepower/device/kasa"
-	"homepower/device/tapo"
+	"homepower/device"
 	"homepower/types"
 	"log"
 	"math/rand"
@@ -24,18 +23,17 @@ func main() {
 	var configs = config.StaticAppConfig
 	registry := prometheus.NewRegistry()
 
-	var sigIntReceived = closeOnSigInt(make(chan bool, 1)) // is closed by SIGINT
+	var sigIntReceived = closeOnSigInt(make(chan bool, 1))
 	var allExited sync.WaitGroup
 	allExited.Add(len(configs.Devices))
 
-	for _, deviceConfig := range configs.Devices {
-		pollableDevice, err := deviceFactory(deviceConfig, configs, registry)
+	for _, cfg := range configs.Devices {
+		pollableDevice, err := device.Factory(cfg, configs, registry)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("could not create device driver for %s (%s): %w", cfg.Ip, cfg.Name, err))
 		}
-
 		scrapeMetrics := registerScrapeMetrics(pollableDevice, registry)
-		go pollDevice(&allExited, sigIntReceived, deviceConfig, pollableDevice, scrapeMetrics)
+		go pollDevice(&allExited, sigIntReceived, cfg, pollableDevice, scrapeMetrics)
 	}
 
 	mux := http.NewServeMux()
@@ -44,17 +42,6 @@ func main() {
 
 	allExited.Wait()
 	os.Exit(0)
-}
-
-func deviceFactory(deviceConfig types.DeviceConfig, configs config.AllConfig, registry prometheus.Registerer) (types.PollableDevice, error) {
-	switch types.DriverFor(deviceConfig.Model) {
-	case types.Kasa:
-		return kasa.NewDevice(&deviceConfig, registry)
-	case types.Tapo:
-		return tapo.NewDevice(configs.TapoCredentials.EmailAddress, configs.TapoCredentials.Password, &deviceConfig, registry)
-	default:
-		return nil, errors.New("unknown device type")
-	}
 }
 
 func closeOnSigInt(channel chan bool) chan bool {
@@ -83,14 +70,14 @@ func startHttpServer(port int16, mux *http.ServeMux, sigIntReceived chan bool) {
 	log.Println(server.ListenAndServe())
 }
 
-func pollDevice(allExited *sync.WaitGroup, sigIntReceived <-chan bool, deviceConfig types.DeviceConfig, dev types.PollableDevice, scrapeMetrics prometheusScrapeMetrics) {
-	println("Polling", deviceConfig.Room, deviceConfig.Name, "every 10 seconds")
+func pollDevice(allExited *sync.WaitGroup, sigIntReceived <-chan bool, cfg types.DeviceConfig, dev types.PollableDevice, scrapeMetrics prometheusScrapeMetrics) {
+	println("Polling", cfg.Room, cfg.Name, "every 10 seconds")
 	defer allExited.Done()
 	ticker := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-sigIntReceived:
-			println("Received should exit signal for", deviceConfig.Room, deviceConfig.Name)
+			println("Received should exit signal for", cfg.Room, cfg.Name)
 			ticker.Stop()
 			return
 		case <-ticker.C:
@@ -105,9 +92,7 @@ func pollDevice(allExited *sync.WaitGroup, sigIntReceived <-chan bool, deviceCon
 			} else {
 				scrapeMetrics.failures.Inc()
 				dev.ResetMetricsToRogueValues()
-				if err.Error() != "unknown device type" {
-					log.Println("Could not query", deviceConfig.Room, deviceConfig.Name, err.Error())
-				}
+				log.Println("Could not query", cfg.Room, cfg.Name, err.Error())
 			}
 		}
 	}

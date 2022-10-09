@@ -3,8 +3,10 @@ package kasa
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"homepower/types"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,24 +18,26 @@ const lightingServiceLightDetailsBody = `{"smartlife.iot.smartbulb.lightingservi
 
 type Device struct {
 	deviceConfig *types.DeviceConfig
-	connection   any
-	metrics      prometheusMetrics
+	connection   *deviceConnection
+	metrics      *prometheusMetrics
 }
 
-func NewDevice(config *types.DeviceConfig, registry prometheus.Registerer) (*Device, error) {
+func NewDevice(config *types.DeviceConfig, registry prometheus.Registerer) *Device {
+	connection := newDeviceConnection(config.Ip, 9999)
 	return &Device{
 		deviceConfig: config,
+		connection:   connection,
 		metrics:      registerMetrics(registry, config),
-	}, nil
+	}
 }
 
 func (dev *Device) PollDeviceAndUpdateMetrics() error {
-	report, err := extractAllData(dev.deviceConfig)
+	report, err := dev.extractAllData()
 	if err != nil {
-		return err
+		return fmt.Errorf("could not poll device for info: %w", err)
 	}
 	if err := dev.metrics.updateMetrics(report); err != nil {
-		return err
+		return fmt.Errorf("could not update metrics after device poll: %w", err)
 	}
 	return nil
 }
@@ -99,63 +103,47 @@ type energyMeterInfo struct {
 	TotalEnergyWattHours int
 }
 
-func eMeterQueryForDevice(model types.DeviceType) (queryBody string, supportsEMeter bool) {
+func eMeterQueryForDevice(model types.DeviceType) (queryBody string) {
 	switch model {
-	case types.KasaHS100:
-		return "", false
 	case types.KasaHS110:
-		return eMeterRealTimeShortBody, true
+		return eMeterRealTimeShortBody
 	case types.KasaKL50B, types.KasaKL110B, types.KasaKL130B:
-		return eMeterRealTimeQualifiedBody, true
+		return eMeterRealTimeQualifiedBody
 	default:
 		panic("Device has invalid model type for the Kasa driver")
 	}
 }
 
-func lightDetailsQueryForDevice(model types.DeviceType) (queryBody string, supportsLampInfo bool) {
-	switch model {
-	case types.KasaHS100, types.KasaHS110:
-		return "", false
-	case types.KasaKL50B, types.KasaKL110B, types.KasaKL130B:
-		return lightingServiceLightDetailsBody, true
-	default:
-		panic("Device has invalid model type for the Kasa driver")
-	}
-}
-
-func extractAllData(device *types.DeviceConfig) (*periodicDeviceReport, error) {
+func (dev *Device) extractAllData() (*periodicDeviceReport, error) {
 	var startTime = time.Now()
-	connection, err := openConnection(device.Ip, 9999)
+	err := dev.connection.openNewConnection()
+	defer dev.connection.closeCurrentConnection()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create connection when extracting data: %w", err)
 	}
-	defer func() { _ = connection.Close() }()
 
-	// All kasa devices support the `get_sysinfo` query
 	var deviceInfoJson []byte
-	if deviceInfoJson, err = queryDevice(connection, sysInfoBody); err != nil {
-		return nil, err
+	if deviceInfoJson, err = dev.connection.queryDevice(sysInfoBody); err != nil {
+		return nil, fmt.Errorf("could not query for device info: %w", err)
 	}
 
-	var eMeterRealTimeBody, supportsEMeter = eMeterQueryForDevice(device.Model)
 	var realTimeJson []byte
-	if supportsEMeter {
-		if realTimeJson, err = queryDevice(connection, eMeterRealTimeBody); err != nil {
-			return nil, err
+	if supportsEMeter(dev.deviceConfig) {
+		var eMeterRealTimeBody = eMeterQueryForDevice(dev.deviceConfig.Model)
+		if realTimeJson, err = dev.connection.queryDevice(eMeterRealTimeBody); err != nil {
+			return nil, fmt.Errorf("could not query for eMeter info: %w", err)
 		}
 	}
 
-	var lampInfoQueryBody, supportsLampInfo = lightDetailsQueryForDevice(device.Model)
 	var lampInfoJson []byte
-	if supportsLampInfo {
-		if lampInfoJson, err = queryDevice(connection, lampInfoQueryBody); err != nil {
-			return nil, err
+	if isLight(dev.deviceConfig) {
+		if lampInfoJson, err = dev.connection.queryDevice(lightingServiceLightDetailsBody); err != nil {
+			return nil, fmt.Errorf("could not query for lamp info: %w", err)
 		}
-
 	}
 
-	return buildPeriodicDeviceReport(device.Model, deviceInfoJson,
-		lampInfoJson, supportsLampInfo, realTimeJson, supportsEMeter, startTime)
+	return buildPeriodicDeviceReport(dev.deviceConfig.Model, deviceInfoJson,
+		lampInfoJson, isLight(dev.deviceConfig), realTimeJson, supportsEMeter(dev.deviceConfig), startTime)
 }
 
 func buildPeriodicDeviceReport(
@@ -167,37 +155,31 @@ func buildPeriodicDeviceReport(
 
 	var report = periodicDeviceReport{}
 
-	err := appendDeviceInfo(model, deviceInfo, &report)
-	if err != nil {
-		return &report, err
+	if err := appendDeviceInfo(model, deviceInfo, &report); err != nil {
+		return &report, fmt.Errorf("could not merge device info into report: %w", err)
 	}
-
 	if supportsEMeter {
-		err2 := appendEMeterInfo(model, realTime, &report)
-		if err2 != nil {
-			return &report, err2
+		if err := appendEMeterInfo(model, realTime, &report); err != nil {
+			return &report, fmt.Errorf("could not merge eMeter info into report: %w", err)
 		}
 	}
-
 	if supportsLampInfo {
-		err2 := appendLampInfo(lampInfo, &report)
-		if err2 != nil {
-			return &report, err2
+		if err := appendLampInfo(lampInfo, &report); err != nil {
+			return &report, fmt.Errorf("could not merge lamp info into report: %w", err)
 		}
 	}
 	report.ScrapeDuration = time.Since(startTime)
 	return &report, nil
 }
 
-// region Device Info
 func appendDeviceInfo(model types.DeviceType, deviceInfo []byte, report *periodicDeviceReport) error {
 	var infoJson map[string]map[string]map[string]interface{}
 	if err := json.Unmarshal(deviceInfo, &infoJson); err != nil {
-		return err
+		return fmt.Errorf("could not unmarshal device info json: %w", err)
 	}
 	var data = infoJson["system"]["get_sysinfo"]
 	if int(data["err_code"].(float64)) != 0 {
-		return errors.New("call to fetch system info failed")
+		return errors.New("call to fetch system info returned non-zero err_code: " + strconv.Itoa(int(data["err_code"].(float64))))
 	}
 
 	report.common = common{
@@ -276,16 +258,14 @@ func mapModelDescription(model types.DeviceType, data map[string]interface{}) st
 	}
 }
 
-//endregion
-
 func appendLampInfo(lampInfo []byte, report *periodicDeviceReport) error {
 	var lampJson map[string]map[string]map[string]interface{}
 	if err := json.Unmarshal(lampInfo, &lampJson); err != nil {
-		return err
+		return fmt.Errorf("could not unmarshal lamp info json: %w", err)
 	}
 	var data = lampJson["smartlife.iot.smartbulb.lightingservice"]["get_light_details"]
 	if int(data["err_code"].(float64)) != 0 {
-		return errors.New("call to fetch lamp info data failed")
+		return errors.New("call to fetch lamp info data returned non-zero err_code: " + strconv.Itoa(int(data["err_code"].(float64))))
 	}
 	if report.smartBulbInfo == nil {
 		report.smartBulbInfo = &smartBulbInfo{}
@@ -302,7 +282,7 @@ func appendLampInfo(lampInfo []byte, report *periodicDeviceReport) error {
 func appendEMeterInfo(model types.DeviceType, realTime []byte, report *periodicDeviceReport) error {
 	var eMeterJson map[string]map[string]map[string]interface{}
 	if err := json.Unmarshal(realTime, &eMeterJson); err != nil {
-		return err
+		return fmt.Errorf("could not unmarshal eMeter info json: %w", err)
 	}
 	var data map[string]interface{}
 	switch model {
@@ -314,7 +294,7 @@ func appendEMeterInfo(model types.DeviceType, realTime []byte, report *periodicD
 		panic("Device has invalid model type for the Kasa eMeter driver")
 	}
 	if int(data["err_code"].(float64)) != 0 {
-		return errors.New("call to fetch eMeter data failed")
+		return errors.New("call to fetch eMeter data returned non-zero err_code: " + strconv.Itoa(int(data["err_code"].(float64))))
 	}
 
 	report.energyMeterInfo = &energyMeterInfo{
@@ -330,32 +310,4 @@ func appendEMeterInfo(model types.DeviceType, realTime []byte, report *periodicD
 		report.energyMeterInfo.TotalEnergyWattHours = int(totalEnergy.(float64))
 	}
 	return nil
-}
-
-func isSwitch(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaHS100 || config.Model == types.KasaHS110
-}
-
-func isLight(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaKL50B || config.Model == types.KasaKL110B || config.Model == types.KasaKL130B
-}
-
-func isLightVariableTemperature(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaKL130B
-}
-
-func isLightColoured(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaKL130B
-}
-
-func hasPowerMonitoring(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaHS110 || isLight(config)
-}
-
-func hasTotalEnergyMonitoring(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaHS110 || config.Model == types.KasaKL50B || config.Model == types.KasaKL130B // TODO: maybe not 130???
-}
-
-func hasCurrentAndVoltageMonitoring(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaHS110 || config.Model == types.KasaKL50B // TODO: really 50??
 }

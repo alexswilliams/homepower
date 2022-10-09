@@ -1,94 +1,83 @@
 package kasa
 
 import (
-	"errors"
-	"log"
+	"fmt"
 	"net"
 	"strconv"
 	"time"
 )
 
-func openConnection(host string, port uint16) (net.Conn, error) {
-	dialer := &net.Dialer{Timeout: 1 * time.Second}
-	return dialer.Dial("tcp", host+":"+strconv.Itoa(int(port)))
+type deviceConnection struct {
+	address      string
+	dialer       *net.Dialer
+	connection   net.Conn
+	writeTimeout time.Duration
+	readTimeout  time.Duration
 }
 
-func queryDevice(connection net.Conn, request string) ([]byte, error) {
-	err := connection.SetWriteDeadline(time.Now().Add(1 * time.Second))
+func newDeviceConnection(ip string, port uint16) *deviceConnection {
+	return &deviceConnection{
+		address:      ip + ":" + strconv.Itoa(int(port)),
+		dialer:       &net.Dialer{Timeout: 1 * time.Second},
+		connection:   nil,
+		writeTimeout: 1 * time.Second,
+		readTimeout:  2 * time.Second,
+	}
+}
+
+func (dc *deviceConnection) closeCurrentConnection() {
+	if dc.connection != nil {
+		_ = dc.connection.Close()
+		dc.connection = nil
+	}
+}
+func (dc *deviceConnection) openNewConnection() error {
+	dc.closeCurrentConnection()
+	connection, err := dc.dialer.Dial("tcp", dc.address)
 	if err != nil {
-		log.Println("Could not set write timeout on connection")
-		return nil, err
+		return fmt.Errorf("could not dial address: %w", err)
+	}
+	dc.connection = connection
+	return nil
+}
+
+func (dc *deviceConnection) queryDevice(request string) ([]byte, error) {
+	if err := dc.connection.SetWriteDeadline(time.Now().Add(dc.writeTimeout)); err != nil {
+		return nil, fmt.Errorf("could not set write timeout: %w", err)
 	}
 	scrambledText := scramble([]byte(request))
-	bytesWritten, err := connection.Write(scrambledText)
-	if err != nil || bytesWritten != len(scrambledText) {
-		log.Println("Could not write command to connection")
-		return nil, err
+	if bytesWritten, err := dc.connection.Write(scrambledText); err != nil || bytesWritten != len(scrambledText) {
+		return nil, fmt.Errorf("could not write to socket: %w", err)
 	}
 
-	err = connection.SetReadDeadline(time.Now().Add(2 * time.Second))
-	if err != nil {
-		log.Println("Could not set read timeout on connection")
-		return nil, err
+	if err := dc.connection.SetReadDeadline(time.Now().Add(dc.readTimeout)); err != nil {
+		return nil, fmt.Errorf("could not set read timeout: %w", err)
 	}
+	if buffer, err := dc._readLinkieResponse(); err != nil {
+		return nil, fmt.Errorf("could not read response: %w", err)
+	} else {
+		return unscramble(buffer)
+	}
+}
+
+func (dc *deviceConnection) _readLinkieResponse() ([]byte, error) {
 	buffer := make([]byte, 2048)
 
-	bytesRead, err := connection.Read(buffer)
+	bytesRead, err := dc.connection.Read(buffer)
 	buffer = buffer[:bytesRead]
 	if err != nil || bytesRead < 8 {
-		log.Println("Could not read first response packet: " + err.Error())
-		return nil, err
+		return nil, fmt.Errorf("could not read first response packet: %w", err)
 	}
 	expectedSize := expectedLinkiePacketSize(buffer)
-	for len(buffer) < expectedSize && len(buffer) <= 4096 {
+
+	for len(buffer) < expectedSize && len(buffer) <= 8192 {
 		tmpBuffer := make([]byte, 2048)
-		bytesRead, err := connection.Read(tmpBuffer)
-		tmpBuffer = tmpBuffer[:bytesRead]
-		if err != nil {
-			log.Println("Could not read from connection: " + err.Error())
-			return nil, err
+		if bytesRead, err := dc.connection.Read(tmpBuffer); err == nil {
+			tmpBuffer = tmpBuffer[:bytesRead]
+			buffer = append(buffer, tmpBuffer...)
+		} else {
+			return nil, fmt.Errorf("could not read subsequent response packet: %w", err)
 		}
-		buffer = append(buffer, tmpBuffer...)
-	}
-	return unscramble(buffer)
-}
-
-func scramble(b []byte) []byte {
-	var iv byte = 171
-	buffer := make([]byte, 4+len(b))
-
-	writeUInt32ToBufferBigEndian(buffer, uint32(len(b)))
-	for i, ch := range b {
-		iv = byte(iv ^ ch)
-		buffer[i+4] = iv
-	}
-	return buffer
-}
-
-func unscramble(b []byte) ([]byte, error) {
-	var iv byte = 171
-	buffer := make([]byte, len(b)-4)
-
-	expectedSize := expectedLinkiePacketSize(b)
-	if expectedSize != len(b)-4 {
-		log.Println("Unexpected reply size - expected " + strconv.Itoa(expectedSize) +
-			" bytes but received " + strconv.Itoa(len(b)-4) + " bytes")
-		return nil, errors.New("unexpected reply size")
-	}
-	for i, ch := range b[4:] {
-		buffer[i] = byte(iv ^ ch)
-		iv = ch
 	}
 	return buffer, nil
-}
-
-func expectedLinkiePacketSize(b []byte) int {
-	return int(b[3]) + int(b[2])<<8 + int(b[1])<<16 + int(b[0])<<24
-}
-
-func writeUInt32ToBufferBigEndian(b []byte, i uint32) {
-	b[0] = byte((i >> 24) & 0xff)
-	b[1] = byte((i >> 16) & 0xff)
-	b[2] = byte((i >> 8) & 0xff)
-	b[3] = byte(i & 0xff)
 }

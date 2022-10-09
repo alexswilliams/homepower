@@ -3,23 +3,19 @@ package device
 import (
 	"errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"homepower/config"
 	"homepower/device/kasa"
+	"homepower/device/tapo"
 	"homepower/types"
 )
 
-func ExtractAllData(device *types.DeviceConfig) (*kasa.periodicDeviceReport, error) {
-	switch device.Model {
-	case types.KasaHS100, types.KasaHS110, types.KasaKL50B, types.KasaKL110B, types.KasaKL130B:
-		return kasa.extractAllData(device)
+func Factory(deviceConfig types.DeviceConfig, configs config.AllConfig, registry prometheus.Registerer) (types.PollableDevice, error) {
+	switch types.DriverFor(deviceConfig.Model) {
+	case types.Kasa:
+		return kasa.NewDevice(&deviceConfig, registry), nil
+	case types.Tapo:
+		return tapo.NewDevice(configs.TapoCredentials.EmailAddress, configs.TapoCredentials.Password, &deviceConfig, registry)
 	default:
 		return nil, errors.New("unknown device type")
 	}
-}
-
-func RegisterMetrics(registry prometheus.Registerer, dev types.DeviceConfig, lastDeviceReport *kasa.LatestDeviceReport) *prometheus.GaugeVec {
-	switch dev.Model {
-	case types.KasaHS100, types.KasaHS110, types.KasaKL50B, types.KasaKL110B, types.KasaKL130B:
-		return kasa.RegisterMetrics(registry, dev, lastDeviceReport)
-	}
-	return nil
 }

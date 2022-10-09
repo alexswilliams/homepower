@@ -5,7 +5,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"homepower/types"
 	"strconv"
-	"time"
 )
 
 type prometheusMetrics struct {
@@ -17,25 +16,29 @@ type prometheusMetrics struct {
 	hasTotalEnergyMonitoring       bool
 	hasCurrentAndVoltageMonitoring bool
 	commonLabels                   prometheus.Labels
-	updateInfoMetric               func(status *periodicDeviceReport) error
-	updateActiveMode               func(status *periodicDeviceReport) error
-	wifiRssi                       *prometheus.Gauge
-	deviceTurnedOn                 *prometheus.Gauge
-	ledTurnedOn                    *prometheus.Gauge                        // only for switches
-	onTime                         *prometheus.Gauge                        // only for switches
-	isUpdating                     *prometheus.Gauge                        // only for switches
-	updateLightMode                func(status *periodicDeviceReport) error // only for lights
-	brightness                     *prometheus.Gauge                        // only for lights
-	colourTemperature              *prometheus.Gauge                        // only for lights
-	hue                            *prometheus.Gauge                        // only for lights
-	saturation                     *prometheus.Gauge                        // only for lights
-	powerMilliWatts                *prometheus.Gauge                        // HS110, KL50, KL110, KL130,
-	voltageMilliVolts              *prometheus.Gauge                        // HS110 only
-	currentMilliAmps               *prometheus.Gauge                        // HS110 only
-	totalWattHours                 *prometheus.Gauge                        // HS110, KL50, and maybe KL130
+
+	updateInfoMetric func(status *periodicDeviceReport) error
+	updateActiveMode func(status *periodicDeviceReport) error
+	wifiRssi         *prometheus.Gauge
+	deviceTurnedOn   *prometheus.Gauge
+
+	ledTurnedOn *prometheus.Gauge // only for switches
+	onTime      *prometheus.Gauge // only for switches
+	isUpdating  *prometheus.Gauge // only for switches
+
+	updateLightMode   func(status *periodicDeviceReport) error // only for lights
+	brightness        *prometheus.Gauge                        // only for lights
+	colourTemperature *prometheus.Gauge                        // only for lights
+	hue               *prometheus.Gauge                        // only for lights
+	saturation        *prometheus.Gauge                        // only for lights
+
+	powerMilliWatts   *prometheus.Gauge // HS110, KL50, KL110, KL130,
+	voltageMilliVolts *prometheus.Gauge // HS110 only
+	currentMilliAmps  *prometheus.Gauge // HS110 only
+	totalWattHours    *prometheus.Gauge // HS110, KL50, and maybe KL130
 }
 
-func registerMetrics(registry prometheus.Registerer, config *types.DeviceConfig) prometheusMetrics {
+func registerMetrics(registry prometheus.Registerer, config *types.DeviceConfig) *prometheusMetrics {
 	commonLabels := types.GenerateCommonLabels(config)
 	metrics := prometheusMetrics{
 		isSwitch:                       isSwitch(config),
@@ -45,102 +48,80 @@ func registerMetrics(registry prometheus.Registerer, config *types.DeviceConfig)
 		hasPowerMonitoring:             hasPowerMonitoring(config),
 		hasTotalEnergyMonitoring:       hasTotalEnergyMonitoring(config),
 		hasCurrentAndVoltageMonitoring: hasCurrentAndVoltageMonitoring(config),
+		commonLabels:                   commonLabels,
 
-		commonLabels:     commonLabels,
+		wifiRssi:         types.NewGauge(registry, commonLabels, "kasa", "wifi_rssi_db"),
+		deviceTurnedOn:   types.NewGauge(registry, commonLabels, "kasa", "device_turned_on_bool"),
 		updateInfoMetric: registerInfoMetricUpdater(registry, commonLabels, isLight(config)),
-		updateActiveMode: registerModeMetricUpdater(registry, commonLabels, "active_mode", "mode", func(report *periodicDeviceReport) string {
-			return report.ActiveMode
-		}),
-		wifiRssi:       newGauge(registry, commonLabels, "wifi_rssi_db"),
-		deviceTurnedOn: newGauge(registry, commonLabels, "device_turned_on_bool"),
+		updateActiveMode: registerModeMetricUpdater(registry, commonLabels, "active_mode", "mode",
+			func(report *periodicDeviceReport) string {
+				return report.ActiveMode
+			}),
 	}
 	if metrics.isSwitch {
-		metrics.ledTurnedOn = newGauge(registry, commonLabels, "led_turned_on_bool")
-		metrics.onTime = newGauge(registry, commonLabels, "switched_on_time_seconds")
-		metrics.isUpdating = newGauge(registry, commonLabels, "is_updating_bool")
+		metrics.ledTurnedOn = types.NewGauge(registry, commonLabels, "kasa", "led_turned_on_bool")
+		metrics.onTime = types.NewGauge(registry, commonLabels, "kasa", "switched_on_time_seconds")
+		metrics.isUpdating = types.NewGauge(registry, commonLabels, "kasa", "is_updating_bool")
 	}
 	if metrics.isLight {
-		metrics.updateLightMode = registerModeMetricUpdater(registry, commonLabels, "bulb_mode", "mode", func(report *periodicDeviceReport) string {
-			return report.smartBulbInfo.Mode
-		})
-		metrics.brightness = newGauge(registry, commonLabels, "bulb_brightness_percent")
+		metrics.brightness = types.NewGauge(registry, commonLabels, "kasa", "bulb_brightness_percent")
+		metrics.updateLightMode = registerModeMetricUpdater(registry, commonLabels, "bulb_mode", "mode",
+			func(report *periodicDeviceReport) string {
+				return report.smartBulbInfo.Mode
+			})
 		if metrics.isVariableTemperature {
-			metrics.colourTemperature = newGauge(registry, commonLabels, "bulb_colour_temperature_kelvin")
+			metrics.colourTemperature = types.NewGauge(registry, commonLabels, "kasa", "bulb_colour_temperature_kelvin")
 		}
 		if metrics.isColoured {
-			metrics.hue = newGauge(registry, commonLabels, "bulb_hue")
-			metrics.saturation = newGauge(registry, commonLabels, "bulb_saturation_percent")
+			metrics.hue = types.NewGauge(registry, commonLabels, "kasa", "bulb_hue")
+			metrics.saturation = types.NewGauge(registry, commonLabels, "kasa", "bulb_saturation_percent")
 		}
 	}
 	if metrics.hasPowerMonitoring {
-		metrics.powerMilliWatts = newGauge(registry, commonLabels, "em_power_mw")
+		metrics.powerMilliWatts = types.NewGauge(registry, commonLabels, "kasa", "em_power_mw")
 	}
 	if metrics.hasTotalEnergyMonitoring {
-		metrics.totalWattHours = newGauge(registry, commonLabels, "em_total_energy_wh")
+		metrics.totalWattHours = types.NewGauge(registry, commonLabels, "kasa", "em_total_energy_wh")
 	}
 	if metrics.hasCurrentAndVoltageMonitoring {
-		metrics.currentMilliAmps = newGauge(registry, commonLabels, "em_current_ma")
-		metrics.voltageMilliVolts = newGauge(registry, commonLabels, "em_voltage_mv")
+		metrics.currentMilliAmps = types.NewGauge(registry, commonLabels, "kasa", "em_current_ma")
+		metrics.voltageMilliVolts = types.NewGauge(registry, commonLabels, "kasa", "em_voltage_mv")
 	}
 	metrics.resetToRogueValues()
-	return metrics
-}
-
-func newGauge(registry prometheus.Registerer, commonLabels prometheus.Labels, name string) *prometheus.Gauge {
-	var gauge = prometheus.NewGauge(prometheus.GaugeOpts{Name: name, ConstLabels: commonLabels, Namespace: "kasa"})
-	registry.MustRegister(gauge)
-	return &gauge
-}
-func setIfPresent(gauge *prometheus.Gauge, value float64) {
-	if gauge != nil {
-		(*gauge).Set(value)
-	}
-}
-func setFromBool(gauge *prometheus.Gauge, value bool) {
-	if value {
-		setIfPresent(gauge, 1.0)
-	} else {
-		setIfPresent(gauge, 0.0)
-	}
-}
-func setFromInt(gauge *prometheus.Gauge, value int) {
-	setIfPresent(gauge, float64(value))
-}
-func setFromDurationAsSeconds(gauge *prometheus.Gauge, value time.Duration) {
-	setIfPresent(gauge, value.Seconds())
+	return &metrics
 }
 
 func (metrics *prometheusMetrics) updateMetrics(status *periodicDeviceReport) error {
 	if status == nil {
 		metrics.resetToRogueValues()
 	} else {
-		setFromInt(metrics.wifiRssi, status.WifiRssi)
+		types.SetFromInt(metrics.wifiRssi, status.WifiRssi)
 		if metrics.isSwitch && status.smartPlugInfo != nil {
-			setFromBool(metrics.deviceTurnedOn, status.RelayOn)
-			setFromBool(metrics.ledTurnedOn, status.LedOn)
-			setFromDurationAsSeconds(metrics.onTime, status.OnTime)
-			setFromBool(metrics.isUpdating, status.Updating)
+			types.SetFromBool(metrics.deviceTurnedOn, status.RelayOn)
+			types.SetFromBool(metrics.ledTurnedOn, status.LedOn)
+			types.SetFromDurationAsSeconds(metrics.onTime, status.OnTime)
+			types.SetFromBool(metrics.isUpdating, status.Updating)
 		}
 		if metrics.isLight && status.smartBulbInfo != nil {
-			setFromBool(metrics.deviceTurnedOn, status.IsOn)
-			setFromInt(metrics.brightness, status.Brightness)
+			types.SetFromBool(metrics.deviceTurnedOn, status.IsOn)
+			types.SetFromInt(metrics.brightness, status.Brightness)
 			if metrics.isVariableTemperature {
-				setFromInt(metrics.colourTemperature, status.ColourTemperature)
+				types.SetFromInt(metrics.colourTemperature, status.ColourTemperature)
 			}
 			if metrics.isColoured {
-				setFromInt(metrics.hue, status.Hue)
-				setFromInt(metrics.saturation, status.Saturation)
+				types.SetFromInt(metrics.hue, status.Hue)
+				types.SetFromInt(metrics.saturation, status.Saturation)
 			}
 		}
 		if metrics.hasPowerMonitoring {
-			setFromInt(metrics.powerMilliWatts, status.PowerMilliWatts)
+			types.SetFromInt(metrics.powerMilliWatts, status.PowerMilliWatts)
 		}
 		if metrics.hasTotalEnergyMonitoring {
-			setFromInt(metrics.totalWattHours, status.TotalEnergyWattHours)
+			types.SetFromInt(metrics.totalWattHours, status.TotalEnergyWattHours)
 		}
 		if metrics.hasCurrentAndVoltageMonitoring {
-			setFromInt(metrics.currentMilliAmps, status.CurrentMilliAmps)
-			setFromInt(metrics.voltageMilliVolts, status.VoltageMilliVolts)
+			types.SetFromInt(metrics.currentMilliAmps, status.CurrentMilliAmps)
+			types.SetFromInt(metrics.voltageMilliVolts, status.VoltageMilliVolts)
 		}
 		if err := metrics.updateInfoMetric(status); err != nil {
 			return fmt.Errorf("could not update info metric: %w", err)
@@ -150,7 +131,7 @@ func (metrics *prometheusMetrics) updateMetrics(status *periodicDeviceReport) er
 		}
 		if metrics.updateLightMode != nil {
 			if err := metrics.updateLightMode(status); err != nil {
-				return fmt.Errorf("could not update active mode metric: %w", err)
+				return fmt.Errorf("could not update light mode metric: %w", err)
 			}
 		}
 	}
@@ -163,19 +144,19 @@ func (metrics *prometheusMetrics) resetToRogueValues() {
 	if metrics.updateLightMode != nil {
 		_ = metrics.updateLightMode(nil)
 	}
-	setIfPresent(metrics.wifiRssi, +1.0) // nb: positive rogue value
-	setIfPresent(metrics.deviceTurnedOn, -1.0)
-	setIfPresent(metrics.ledTurnedOn, -1.0)
-	setIfPresent(metrics.onTime, -1.0)
-	setIfPresent(metrics.isUpdating, -1.0)
-	setIfPresent(metrics.brightness, -1.0)
-	setIfPresent(metrics.colourTemperature, -1.0)
-	setIfPresent(metrics.hue, -1.0)
-	setIfPresent(metrics.saturation, -1.0)
-	setIfPresent(metrics.powerMilliWatts, -1.0)
-	setIfPresent(metrics.voltageMilliVolts, -1.0)
-	setIfPresent(metrics.currentMilliAmps, -1.0)
-	setIfPresent(metrics.totalWattHours, -1.0)
+	types.SetIfPresent(metrics.wifiRssi, +1.0) // nb: positive rogue value
+	types.SetIfPresent(metrics.deviceTurnedOn, -1.0)
+	types.SetIfPresent(metrics.ledTurnedOn, -1.0)
+	types.SetIfPresent(metrics.onTime, -1.0)
+	types.SetIfPresent(metrics.isUpdating, -1.0)
+	types.SetIfPresent(metrics.brightness, -1.0)
+	types.SetIfPresent(metrics.colourTemperature, -1.0)
+	types.SetIfPresent(metrics.hue, -1.0)
+	types.SetIfPresent(metrics.saturation, -1.0)
+	types.SetIfPresent(metrics.powerMilliWatts, -1.0)
+	types.SetIfPresent(metrics.voltageMilliVolts, -1.0)
+	types.SetIfPresent(metrics.currentMilliAmps, -1.0)
+	types.SetIfPresent(metrics.totalWattHours, -1.0)
 }
 
 func registerInfoMetricUpdater(registry prometheus.Registerer, commonLabels prometheus.Labels, isLight bool) func(status *periodicDeviceReport) error {
