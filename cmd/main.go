@@ -24,7 +24,7 @@ func main() {
 	var configs = config.StaticAppConfig
 	registry := prometheus.NewRegistry()
 
-	var shouldExit = closeOnSigInt(make(chan bool, 1)) // is closed by SIGINT
+	var sigIntReceived = closeOnSigInt(make(chan bool, 1)) // is closed by SIGINT
 	var allExited sync.WaitGroup
 	allExited.Add(len(configs.Devices))
 
@@ -35,12 +35,12 @@ func main() {
 		}
 
 		scrapeMetrics := registerScrapeMetrics(pollableDevice, registry)
-		go pollDevice(&allExited, shouldExit, deviceConfig, pollableDevice, scrapeMetrics)
+		go pollDevice(&allExited, sigIntReceived, deviceConfig, pollableDevice, scrapeMetrics)
 	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
-	go startHttpServer(9981, mux, shouldExit)
+	go startHttpServer(9981, mux, sigIntReceived)
 
 	allExited.Wait()
 	os.Exit(0)
@@ -64,7 +64,7 @@ func closeOnSigInt(channel chan bool) chan bool {
 	return channel
 }
 
-func startHttpServer(port int16, mux *http.ServeMux, shouldExit chan bool) {
+func startHttpServer(port int16, mux *http.ServeMux, sigIntReceived chan bool) {
 	server := http.Server{
 		Addr:              ":" + strconv.Itoa(int(port)),
 		Handler:           mux,
@@ -74,7 +74,7 @@ func startHttpServer(port int16, mux *http.ServeMux, shouldExit chan bool) {
 	}
 	println("Listening on port " + strconv.Itoa(int(port)))
 	go func() {
-		<-shouldExit
+		<-sigIntReceived
 		println("Received signal to shut down http server")
 		if err := server.Shutdown(context.Background()); err != nil {
 			println(err.Error())
@@ -83,13 +83,13 @@ func startHttpServer(port int16, mux *http.ServeMux, shouldExit chan bool) {
 	log.Println(server.ListenAndServe())
 }
 
-func pollDevice(allExited *sync.WaitGroup, shouldExit <-chan bool, deviceConfig types.DeviceConfig, dev types.PollableDevice, scrapeMetrics prometheusScrapeMetrics) {
+func pollDevice(allExited *sync.WaitGroup, sigIntReceived <-chan bool, deviceConfig types.DeviceConfig, dev types.PollableDevice, scrapeMetrics prometheusScrapeMetrics) {
 	println("Polling", deviceConfig.Room, deviceConfig.Name, "every 10 seconds")
 	defer allExited.Done()
 	ticker := time.NewTicker(10 * time.Second)
 	for {
 		select {
-		case <-shouldExit:
+		case <-sigIntReceived:
 			println("Received should exit signal for", deviceConfig.Room, deviceConfig.Name)
 			ticker.Stop()
 			return
