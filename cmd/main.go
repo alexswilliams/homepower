@@ -92,6 +92,7 @@ func pollDevice(allExited *sync.WaitGroup, sigIntReceived <-chan bool, cfg types
 			} else {
 				scrapeMetrics.failures.Inc()
 				dev.ResetMetricsToRogueValues()
+				dev.ResetDeviceConnection()
 				log.Printf("could not query [%s %s]: %v", cfg.Room, cfg.Name, err)
 			}
 		}

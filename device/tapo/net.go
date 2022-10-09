@@ -273,6 +273,19 @@ func (dc *deviceConnection) logout() {
 	dc.addresses.appTokenUrl = ""
 }
 
+func (dc *deviceConnection) forgetKeysAndSession() {
+	dc.logout()
+	dc.client.CloseIdleConnections()
+	dc.client.Jar.SetCookies(dc.addresses.url, []*http.Cookie{{
+		Name:   "TP_SESSIONID",
+		MaxAge: -1,
+	}})
+	dc.cbcCipher = nil
+	dc.cbcIv = nil
+	dc.privateKey = nil
+	dc.publicKeyPem = ""
+}
+
 func (dc *deviceConnection) makeApiCall(method string, params any) (map[string]interface{}, error) {
 	if !dc.isLoggedIn() {
 		log.Println("Not logged in, will log in before making api request")

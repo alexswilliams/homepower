@@ -73,5 +73,6 @@ func contains[E comparable](haystack []E, needle E) bool {
 type PollableDevice interface {
 	PollDeviceAndUpdateMetrics() error
 	ResetMetricsToRogueValues()
+	ResetDeviceConnection()
 	CommonMetricLabels() map[string]string
 }

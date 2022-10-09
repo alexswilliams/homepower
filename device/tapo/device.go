@@ -45,11 +45,12 @@ func (dev *Device) PollDeviceAndUpdateMetrics() error {
 	}
 	return nil
 }
-
 func (dev *Device) ResetMetricsToRogueValues() {
 	dev.metrics.resetToRogueValues()
 }
-
+func (dev *Device) ResetDeviceConnection() {
+	dev.connection.forgetKeysAndSession()
+}
 func (dev *Device) CommonMetricLabels() map[string]string {
 	return dev.metrics.commonLabels
 }

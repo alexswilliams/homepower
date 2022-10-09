@@ -44,6 +44,9 @@ func (dev *Device) PollDeviceAndUpdateMetrics() error {
 func (dev *Device) ResetMetricsToRogueValues() {
 	dev.metrics.resetToRogueValues()
 }
+func (dev *Device) ResetDeviceConnection() {
+	dev.connection.closeCurrentConnection()
+}
 func (dev *Device) CommonMetricLabels() map[string]string {
 	return types.GenerateCommonLabels(dev.deviceConfig)
 }

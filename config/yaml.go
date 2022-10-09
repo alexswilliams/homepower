@@ -9,14 +9,23 @@ import (
 )
 
 func ReadConfigAndCredentials() *AppConfig {
+	// for example:
+	// HOMEPOWER_DEVICE_CONFIG_FILEPATH=config/exampleDeviceManifest.yaml
+	// HOMEPOWER_CREDENTIAL_FILEPATH=config/exampleCredentials.yaml
+	deviceConfigFilepath := os.Getenv("HOMEPOWER_DEVICE_CONFIG_FILEPATH")
+	credentialFilepath := os.Getenv("HOMEPOWER_CREDENTIAL_FILEPATH")
+	if deviceConfigFilepath == "" || credentialFilepath == "" {
+		panic("environment variables for config file locations have not been set")
+	}
+
 	appConfig := &AppConfig{}
-	readDeviceConfig(appConfig)
-	readCredentials(appConfig)
+	readDeviceConfig(appConfig, deviceConfigFilepath)
+	readCredentials(appConfig, credentialFilepath)
 	log.Printf("Using device config: %+v\n", appConfig.Devices)
 	return appConfig
 }
 
-func readDeviceConfig(appConfig *AppConfig) {
+func readDeviceConfig(appConfig *AppConfig, filepath string) {
 	type deviceFromFile struct {
 		Name   string `yaml:"name"`
 		Room   string `yaml:"room"`
@@ -28,7 +37,7 @@ func readDeviceConfig(appConfig *AppConfig) {
 		Devices []deviceFromFile `yaml:"devices"`
 	}
 	devicesFromYaml := devicesConfigFile{}
-	readConfig("config/exampleDeviceManifest.yaml", &devicesFromYaml)
+	readConfig(filepath, &devicesFromYaml)
 	appConfig.Devices = make([]types.DeviceConfig, 0, len(devicesFromYaml.Devices))
 	for _, device := range devicesFromYaml.Devices {
 		appConfig.Devices = append(appConfig.Devices, types.DeviceConfig{
@@ -40,7 +49,7 @@ func readDeviceConfig(appConfig *AppConfig) {
 	}
 }
 
-func readCredentials(config *AppConfig) {
+func readCredentials(config *AppConfig, filepath string) {
 	type emailAndPassword struct {
 		Email    string `yaml:"email"`
 		Password string `yaml:"password"`
@@ -49,7 +58,7 @@ func readCredentials(config *AppConfig) {
 		Tapo emailAndPassword `yaml:"tapo"`
 	}
 	credentials := credentialsFromFile{}
-	readConfig("config/exampleCredentials.yaml", &credentials)
+	readConfig(filepath, &credentials)
 	config.TapoCredentials.EmailAddress = credentials.Tapo.Email
 	config.TapoCredentials.Password = credentials.Tapo.Password
 }
