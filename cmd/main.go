@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	var configs = config.StaticAppConfig
+	var configs = config.ReadConfigAndCredentials()
 	registry := prometheus.NewRegistry()
 
 	var sigIntReceived = closeOnSigInt(make(chan bool, 1))
@@ -28,7 +28,7 @@ func main() {
 	allExited.Add(len(configs.Devices))
 
 	for _, cfg := range configs.Devices {
-		pollableDevice, err := device.Factory(cfg, configs, registry)
+		pollableDevice, err := device.Factory(cfg, &configs.TapoCredentials, registry)
 		if err != nil {
 			panic(fmt.Errorf("could not create device driver for %s (%s): %w", cfg.Ip, cfg.Name, err))
 		}
@@ -92,7 +92,7 @@ func pollDevice(allExited *sync.WaitGroup, sigIntReceived <-chan bool, cfg types
 			} else {
 				scrapeMetrics.failures.Inc()
 				dev.ResetMetricsToRogueValues()
-				log.Println("Could not query", cfg.Room, cfg.Name, err.Error())
+				log.Printf("could not query [%s %s]: %v", cfg.Room, cfg.Name, err)
 			}
 		}
 	}

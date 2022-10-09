@@ -1,10 +1,5 @@
 package types
 
-import (
-	"strconv"
-	"strings"
-)
-
 const (
 	KasaHS100 = iota
 	KasaHS110
@@ -31,6 +26,24 @@ var kasaDeviceTypes = []DeviceType{KasaHS100, KasaHS110, KasaKL110B, KasaKL130B,
 var tapoDeviceTypes = []DeviceType{TapoL900, TapoP100, TapoP110}
 var deviceTypeIsLight = []DeviceType{KasaKL50B, KasaKL110B, KasaKL130B, TapoL900}
 
+var deviceModelStringToDeviceType = map[string]DeviceType{
+	"HS100":  KasaHS100,
+	"HS110":  KasaHS110,
+	"KL110B": KasaKL110B,
+	"KL130B": KasaKL130B,
+	"KL50B":  KasaKL50B,
+	"L900":   TapoL900,
+	"P100":   TapoP100,
+	"P110":   TapoP110,
+}
+
+func DeviceTypeFor(modelName string) DeviceType {
+	if deviceType, found := deviceModelStringToDeviceType[modelName]; found {
+		return deviceType
+	}
+	panic("model name " + modelName + " does not correspond to a known device type")
+}
+
 type DeviceConfig struct {
 	Name  string
 	Room  string
@@ -55,20 +68,6 @@ func contains[E comparable](haystack []E, needle E) bool {
 		}
 	}
 	return false
-}
-
-func GenerateCommonLabels(dev *DeviceConfig) map[string]string {
-	return map[string]string{
-		"dev_room":      dev.Room,
-		"dev_name":      dev.Name,
-		"dev_ip":        dev.Ip,
-		"dev_full_name": strings.TrimSpace(dev.Room + " " + dev.Name),
-		"is_light":      strconv.FormatBool(isLight(dev.Model)),
-	}
-}
-
-func isLight(model DeviceType) bool {
-	return contains(deviceTypeIsLight, model)
 }
 
 type PollableDevice interface {

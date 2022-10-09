@@ -177,8 +177,7 @@ func (dc *deviceConnection) unmarshalPassthroughResponse(passthroughResult map[s
 		return nil, err
 	}
 	if errorCode, present := responseData["error_code"]; present && int(errorCode.(float64)) != 0 {
-		log.Println("response data:", responseData) // TODO: for debugging
-		return nil, errors.New("non-zero error code returned within encrypted payload")
+		return nil, errors.New("non-zero error code returned within encrypted payload: " + strconv.Itoa(int(errorCode.(float64))))
 	}
 
 	responseResult := responseData["result"].(map[string]interface{})
