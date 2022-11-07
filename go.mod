@@ -3,7 +3,7 @@ module homepower
 go 1.19
 
 require (
-	github.com/prometheus/client_golang v1.13.0
+	github.com/prometheus/client_golang v1.13.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
