@@ -15,4 +15,7 @@ clean:
 docker-local:
 	docker build -f build/package/Dockerfile .
 
-.PHONY: deps run clean docker-local
+podman-local:
+	podman build -f build/package/Dockerfile .
+
+.PHONY: deps run clean docker-local podman-local

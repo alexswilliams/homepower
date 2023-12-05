@@ -3,7 +3,7 @@ package kasa
 import "homepower/types"
 
 func isSwitch(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaHS100 || config.Model == types.KasaHS110
+	return config.Model == types.KasaHS100 || config.Model == types.KasaHS110 || config.Model == types.KasaKP115
 }
 
 func isLight(config *types.DeviceConfig) bool {
@@ -19,15 +19,15 @@ func isLightColoured(config *types.DeviceConfig) bool {
 }
 
 func hasPowerMonitoring(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaHS110 || isLight(config)
+	return config.Model == types.KasaHS110 || isLight(config) || config.Model == types.KasaKP115
 }
 
 func hasTotalEnergyMonitoring(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaHS110 || config.Model == types.KasaKL50B || config.Model == types.KasaKL130B // TODO: maybe not 130???
+	return config.Model == types.KasaHS110 || config.Model == types.KasaKL50B || config.Model == types.KasaKL130B || config.Model == types.KasaKP115 // TODO: maybe not 130???
 }
 
 func hasCurrentAndVoltageMonitoring(config *types.DeviceConfig) bool {
-	return config.Model == types.KasaHS110 || config.Model == types.KasaKL50B // TODO: really 50??
+	return config.Model == types.KasaHS110 || config.Model == types.KasaKL50B || config.Model == types.KasaKP115 // TODO: really 50??
 }
 
 func supportsEMeter(config *types.DeviceConfig) bool {

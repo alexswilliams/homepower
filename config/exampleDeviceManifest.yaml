@@ -112,3 +112,9 @@ devices:
     ip: "192.168.1.68"
     model: "P110"
     driver: "tapo"
+
+  - name: "Microwave"
+    room: "Kitchen"
+    ip: "192.168.1.69"
+    model: "KP115"
+    driver: "kasa"

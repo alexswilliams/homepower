@@ -1,4 +1,4 @@
-FROM golang:1.19.0-bullseye as build
+FROM docker.io/golang:1.21.4-bullseye as build
 WORKDIR /go/src/app
 COPY . ./
 RUN make bin/main

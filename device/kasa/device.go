@@ -108,7 +108,7 @@ type energyMeterInfo struct {
 
 func eMeterQueryForDevice(model types.DeviceType) (queryBody string) {
 	switch model {
-	case types.KasaHS110:
+	case types.KasaHS110, types.KasaKP115:
 		return eMeterRealTimeShortBody
 	case types.KasaKL50B, types.KasaKL110B, types.KasaKL130B:
 		return eMeterRealTimeQualifiedBody
@@ -180,6 +180,9 @@ func appendDeviceInfo(model types.DeviceType, deviceInfo []byte, report *periodi
 	if err := json.Unmarshal(deviceInfo, &infoJson); err != nil {
 		return fmt.Errorf("could not unmarshal device info json: %w", err)
 	}
+	//var out, _ = json.MarshalIndent(infoJson, "", "  ")
+	//fmt.Print(string(out))
+
 	var data = infoJson["system"]["get_sysinfo"]
 	if int(data["err_code"].(float64)) != 0 {
 		return errors.New("call to fetch system info returned non-zero err_code: " + strconv.Itoa(int(data["err_code"].(float64))))
@@ -200,7 +203,7 @@ func appendDeviceInfo(model types.DeviceType, deviceInfo []byte, report *periodi
 	}
 
 	switch model {
-	case types.KasaHS100, types.KasaHS110:
+	case types.KasaHS100, types.KasaHS110, types.KasaKP115:
 		report.smartPlugInfo = &smartPlugInfo{
 			RelayOn:  int(data["relay_state"].(float64)) == 1,
 			LedOn:    int(data["led_off"].(float64)) == 0,
@@ -232,7 +235,7 @@ func mapDeviceType(model types.DeviceType, data map[string]interface{}) string {
 	switch model {
 	case types.KasaHS100, types.KasaHS110:
 		return data["type"].(string)
-	case types.KasaKL50B, types.KasaKL110B, types.KasaKL130B:
+	case types.KasaKL50B, types.KasaKL110B, types.KasaKL130B, types.KasaKP115:
 		return data["mic_type"].(string)
 	default:
 		panic("Device has invalid model type for the Kasa driver")
@@ -241,7 +244,7 @@ func mapDeviceType(model types.DeviceType, data map[string]interface{}) string {
 
 func mapMac(model types.DeviceType, data map[string]interface{}) string {
 	switch model {
-	case types.KasaHS100, types.KasaHS110: // e.g. AA:00:11:BB:22:33
+	case types.KasaHS100, types.KasaHS110, types.KasaKP115: // e.g. AA:00:11:BB:22:33
 		return strings.ReplaceAll(data["mac"].(string), ":", "")
 	case types.KasaKL50B, types.KasaKL110B, types.KasaKL130B: // e.g. AA0011BB2233
 		return data["mic_mac"].(string)
@@ -252,7 +255,7 @@ func mapMac(model types.DeviceType, data map[string]interface{}) string {
 
 func mapModelDescription(model types.DeviceType, data map[string]interface{}) string {
 	switch model {
-	case types.KasaHS100, types.KasaHS110:
+	case types.KasaHS100, types.KasaHS110, types.KasaKP115:
 		return data["dev_name"].(string)
 	case types.KasaKL50B, types.KasaKL110B, types.KasaKL130B:
 		return data["description"].(string)
@@ -287,9 +290,12 @@ func appendEMeterInfo(model types.DeviceType, realTime []byte, report *periodicD
 	if err := json.Unmarshal(realTime, &eMeterJson); err != nil {
 		return fmt.Errorf("could not unmarshal eMeter info json: %w", err)
 	}
+	//var out, _ = json.MarshalIndent(eMeterJson, "", "  ")
+	//fmt.Print(string(out))
+
 	var data map[string]interface{}
 	switch model {
-	case types.KasaHS110:
+	case types.KasaHS110, types.KasaKP115:
 		data = eMeterJson["emeter"]["get_realtime"]
 	case types.KasaKL50B, types.KasaKL110B, types.KasaKL130B:
 		data = eMeterJson["smartlife.iot.common.emeter"]["get_realtime"]

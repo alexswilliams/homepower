@@ -10,6 +10,7 @@ const (
 	TapoL900
 	TapoP100
 	TapoP110
+	KasaKP115
 )
 
 type DeviceType int
@@ -22,7 +23,7 @@ const (
 
 type DeviceDriver int
 
-var kasaDeviceTypes = []DeviceType{KasaHS100, KasaHS110, KasaKL110B, KasaKL130B, KasaKL50B}
+var kasaDeviceTypes = []DeviceType{KasaHS100, KasaHS110, KasaKL110B, KasaKL130B, KasaKL50B, KasaKP115}
 var tapoDeviceTypes = []DeviceType{TapoL900, TapoP100, TapoP110}
 var deviceTypeIsLight = []DeviceType{KasaKL50B, KasaKL110B, KasaKL130B, TapoL900}
 
@@ -35,6 +36,7 @@ var deviceModelStringToDeviceType = map[string]DeviceType{
 	"L900":   TapoL900,
 	"P100":   TapoP100,
 	"P110":   TapoP110,
+	"KP115":  KasaKP115,
 }
 
 func DeviceTypeFor(modelName string) DeviceType {
