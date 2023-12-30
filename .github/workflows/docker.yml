@@ -12,8 +12,8 @@ jobs:
       - name: Set Parameters
         id: params
         run: |
-          echo "::set-output name=date::$(date +%Y-%m-%d-%H-%M)"
-          echo "::set-output name=shortRef::$(head -c 7 <<< '${{ github.sha }}')"
+          echo "date=$(date +%Y-%m-%d-%H-%M)" >> $GITHUB_OUTPUT
+          echo "shortRef=$(head -c 7 <<< '${{ github.sha }}')" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
