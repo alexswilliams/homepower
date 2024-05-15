@@ -9,13 +9,12 @@ import (
 	"homepower/device"
 	"homepower/types"
 	"log"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -37,7 +36,11 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "/metrics")
+		w.WriteHeader(307)
+	})
+	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	go startHttpServer(9981, mux, sigIntReceived)
 
 	allExited.Wait()
@@ -46,7 +49,7 @@ func main() {
 
 func closeOnSigInt(channel chan bool) chan bool {
 	var signals = make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT)
+	signal.Notify(signals, os.Interrupt)
 	go func() { <-signals; println("Received SIGINT"); close(channel) }()
 	return channel
 }
@@ -81,7 +84,7 @@ func pollDevice(allExited *sync.WaitGroup, sigIntReceived <-chan bool, cfg types
 			ticker.Stop()
 			return
 		case <-ticker.C:
-			time.Sleep(time.Duration(rand.Intn(2000)) * time.Millisecond)
+			time.Sleep(rand.N(2000 * time.Millisecond))
 
 			timeBefore := time.Now()
 			err := dev.PollDeviceAndUpdateMetrics()

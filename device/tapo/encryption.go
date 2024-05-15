@@ -77,7 +77,7 @@ func pkcs7Pad(buf []byte, size int) []byte {
 	padLen := size - bufLen%size
 	padded := make([]byte, bufLen+padLen)
 	copy(padded, buf)
-	for i := 0; i < padLen; i++ {
+	for i := range padLen {
 		padded[bufLen+i] = byte(padLen)
 	}
 	return padded
