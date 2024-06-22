@@ -3,7 +3,6 @@ package tapo
 import (
 	"bytes"
 	"crypto/cipher"
-	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -18,16 +17,9 @@ import (
 )
 
 type requestBodyMethodParamsTime struct {
-	Method          string      `json:"method"`
-	Params          interface{} `json:"params,omitempty"`
-	RequestTimeMils int64       `json:"requestTimeMils"`
-}
-type requestBodyMethodParams struct {
-	Method string      `json:"method"`
-	Params interface{} `json:"params,omitempty"`
-}
-type passthroughParams struct {
-	Request string `json:"request"`
+	Method          string `json:"method"`
+	Params          any    `json:"params,omitempty"`
+	RequestTimeMils int64  `json:"requestTimeMils"`
 }
 
 type deviceAddresses struct {
@@ -87,18 +79,6 @@ func newDeviceConnection(email, password, deviceIp string, port uint16) (*device
 	}, nil
 }
 
-func initNewRsaKeypair() (*rsa.PrivateKey, string, error) {
-	privateKey, err := NewRsaKeypair()
-	if err != nil {
-		return nil, "", fmt.Errorf("could not generate new RSA keypair: %w", err)
-	}
-	pubKeyString, err := textualPublicKey(privateKey)
-	if err != nil {
-		return nil, "", fmt.Errorf("could not extract textual public key from priate key: %w", err)
-	}
-	return privateKey, pubKeyString, nil
-}
-
 func (dc *deviceConnection) devicePostUrl() string {
 	if dc.addresses.appTokenUrl == "" {
 		return dc.addresses.appUrl
@@ -154,9 +134,14 @@ func (dc *deviceConnection) marshalPassthroughPayload(method string, params any)
 	if err != nil {
 		return nil, fmt.Errorf("could not marshal passthrough payload: %w", err)
 	}
-	return json.Marshal(requestBodyMethodParams{
+	return json.Marshal(struct {
+		Method string `json:"method"`
+		Params any    `json:"params,omitempty"`
+	}{
 		Method: "securePassthrough",
-		Params: passthroughParams{
+		Params: struct {
+			Request string `json:"request"`
+		}{
 			Request: encryptWithPkcs7Padding(dc.newEncrypter(), clearTextPayload),
 		},
 	})
@@ -181,9 +166,13 @@ func (dc *deviceConnection) unmarshalPassthroughResponse(passthroughResult map[s
 
 func (dc *deviceConnection) doKeyExchange() error {
 	dc.logout()
-	privateKey, publicKeyPem, err := initNewRsaKeypair()
+	privateKey, err := NewRsaKeypair()
 	if err != nil {
-		return fmt.Errorf("could not initialise new RSA keypair: %w", err)
+		return fmt.Errorf("could not generate new RSA keypair: %w", err)
+	}
+	publicKeyPem, err := textualPublicKey(privateKey)
+	if err != nil {
+		return fmt.Errorf("could not extract textual public key from priate key: %w", err)
 	}
 
 	type handshakeParams struct {
@@ -237,11 +226,10 @@ func (dc *deviceConnection) doLogin() error {
 	}
 	dc.logout()
 
-	type loginParams struct {
+	passthroughBody, err := dc.marshalPassthroughPayload("login_device", struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
-	}
-	passthroughBody, err := dc.marshalPassthroughPayload("login_device", loginParams{
+	}{
 		Username: base64.StdEncoding.EncodeToString([]byte(dc.hashedEmail)),
 		Password: base64.StdEncoding.EncodeToString([]byte(dc.password)),
 	})
@@ -280,7 +268,13 @@ func (dc *deviceConnection) forgetKeysAndSession() {
 	dc.cbcIv = nil
 }
 
-func (dc *deviceConnection) makeApiCall(method string, params any) (map[string]interface{}, error) {
+func (dc *deviceConnection) GetDeviceInfo() (map[string]interface{}, error) {
+	return dc.makeApiCall("get_device_info")
+}
+func (dc *deviceConnection) GetEnergyUsage() (map[string]interface{}, error) {
+	return dc.makeApiCall("get_energy_usage")
+}
+func (dc *deviceConnection) makeApiCall(method string) (map[string]interface{}, error) {
 	if !dc.isLoggedIn() {
 		log.Println("Not logged in, will log in before making api request")
 		if err := dc.doLogin(); err != nil {
@@ -288,7 +282,7 @@ func (dc *deviceConnection) makeApiCall(method string, params any) (map[string]i
 		}
 	}
 
-	passthroughBody, err := dc.marshalPassthroughPayload(method, params)
+	passthroughBody, err := dc.marshalPassthroughPayload(method, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not marshal passthrough payload for %s: %w", method, err)
 	}

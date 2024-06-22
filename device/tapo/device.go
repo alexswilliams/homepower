@@ -93,7 +93,7 @@ type energyMeterInfo struct {
 }
 
 func (dev *Device) populateDeviceInfo(status *deviceStatus) error {
-	responseResult, err := dev.connection.makeApiCall("get_device_info", nil)
+	responseResult, err := dev.connection.GetDeviceInfo()
 	if err != nil {
 		return fmt.Errorf("could not make API call while fetching device info: %w", err)
 	}
@@ -133,7 +133,7 @@ func (dev *Device) populateDeviceInfo(status *deviceStatus) error {
 }
 
 func (dev *Device) populateEnergyInfo(status *deviceStatus) error {
-	responseResult, err := dev.connection.makeApiCall("get_energy_usage", nil)
+	responseResult, err := dev.connection.GetEnergyUsage()
 	if err != nil {
 		return fmt.Errorf("could not make API call while fetching energy usage: %w", err)
 	}
