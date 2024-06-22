@@ -3,6 +3,9 @@ CGO_ENABLED=0
 bin/main: deps $(shell find . -name '*.go')
 	go build  -o bin/main -ldflags="-s -w" -tags netgo -a  cmd/main.go
 
+test: $(shell find . -name '*.go')
+	go test ./device/...
+
 deps: go.mod
 	go mod download
 
@@ -18,4 +21,4 @@ docker-local:
 podman-local:
 	podman build -f build/package/Dockerfile .
 
-.PHONY: deps run clean docker-local podman-local
+.PHONY: deps run clean docker-local podman-local test
