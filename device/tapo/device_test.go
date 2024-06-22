@@ -67,34 +67,40 @@ func handleP100(t *testing.T, method string, params any) ([]byte, error) {
 				Ssid               string  `json:"ssid"`
 				TimeDiff           int     `json:"time_diff"`
 				Type               string  `json:"type"`
+				TimeUsageToday     int     `json:"time_usage_today"`
+				TimeUsagePast7     int     `json:"time_usage_past7"`
+				TimeUsagePast30    int     `json:"time_usage_past30"`
 				DefaultStates      any     `json:"default_states"`
 			}{
-				Avatar:             "egg_boiler",
-				DeviceId:           "802280A16D601909124373211884D9081F4B1B9C",
-				DeviceOn:           false,
+				Avatar:             "plug",
+				DeviceId:           "8022773CA54EB0774EC28EE59F6ECF951F4B0EDC",
+				DeviceOn:           true,
 				FwId:               "1D18AD293A25ABDE41405B20C6F98816",
-				FwVer:              "1.4.10 Build 20211104 Rel. 35882",
+				FwVer:              "1.2.10 Build 20210207 Rel. 67438",
 				HasSetLocationInfo: false,
 				HwId:               "9994A0A7D5B29645B8150C392284029D",
 				HwVer:              "1.20.0",
 				IP:                 "127.0.0.1",
-				Lang:               "",
-				Latitude:           -1.879048193e+09, // looks like a rogue value?
-				Longitude:          -1.879048193e+09,
-				Location:           "",
-				MacAddress:         "5C-A6-E6-FE-BE-0B",
+				Lang:               "en_US",
+				Latitude:           -1879048193, // rogue value - 0x8FFFFFFF
+				Longitude:          -1879048193, // rogue value - 0x8FFFFFFF
+				Location:           "living_room",
+				MacAddress:         "5C-A6-E6-FE-C3-36",
 				Model:              "P100",
-				Nickname:           "U2xvdyBDb29rZXI=",
+				Nickname:           "U21hcnQgUGx1Zw==",
 				OemId:              "D43E293FEA5A174CC7534285828B0D15",
-				OnTime:             0,
+				OnTime:             194,
 				Overheated:         false,
 				Region:             "Europe/London",
-				Rssi:               -48,
+				Rssi:               -34,
 				SignalLevel:        3,
 				Specs:              "UK",
 				Ssid:               "QWxleElvVA==",
 				TimeDiff:           0,
 				Type:               "SMART.TAPOPLUG",
+				TimeUsageToday:     3,
+				TimeUsagePast7:     3,
+				TimeUsagePast30:    3,
 				DefaultStates: struct {
 					State any    `json:"state"`
 					Type  string `json:"type"`

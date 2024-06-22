@@ -1,38 +1,4 @@
 Get Device Info
-	// P100
-	//  map[
-	//    avatar:egg_boiler
-	//    default_states:map[
-	//      state:map[]
-	//      type:last_states
-	//    ]
-	//    device_id:802280A16D601909124373211884D9081F4B1B9C
-	//    device_on:false
-	//    fw_id:1D18AD293A25ABDE41405B20C6F98816
-	//    fw_ver:1.4.10 Build 20211104 Rel. 35882
-	//    has_set_location_info:false
-	//    hw_id:9994A0A7D5B29645B8150C392284029D
-	//    hw_ver:1.20.0
-	//    ip:192.168.1.64
-	//    lang:
-	//    latitude:-1.879048193e+09 // ... a rogue value? -1879048193 anyone?
-	//    location:
-	//    longitude:-1.879048193e+09
-	//    mac:5C-A6-E6-FE-BE-0B
-	//    model:P100
-	//    nickname:U2xvdyBDb29rZXI=
-	//    oem_id:D43E293FEA5A174CC7534285828B0D15
-	//    on_time:0
-	//    overheated:false
-	//    region:Europe/London
-	//    rssi:-48
-	//    signal_level:3
-	//    specs:UK
-	//    ssid:QWxleElvVA==
-	//    time_diff:0
-	//    type:SMART.TAPOPLUG
-	//  ]
-
 	// P110
 	//map[
 	// avatar:fan
