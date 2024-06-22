@@ -44,10 +44,8 @@ type deviceConnection struct {
 	addresses   deviceAddresses
 	client      *http.Client // A long-lived HTTP client that also retains the HTTP session state (e.g. cookies)
 
-	privateKey   *rsa.PrivateKey // This app's private key, nil until created during key-exchange
-	publicKeyPem string          // This app's public component, the empty string until created during key-exchange
-	cbcIv        []byte          // The shared CBC init vector between this app and the device, nil until after key-exchange
-	cbcCipher    *cipher.Block   // The shared cipher info between this app and the device, nil until after key-exchange
+	cbcIv     []byte        // The shared CBC init vector between this app and the device, nil until after key-exchange
+	cbcCipher *cipher.Block // The shared cipher info between this app and the device, nil until after key-exchange
 }
 
 //goland:noinspection HttpUrlsUsage
@@ -89,19 +87,16 @@ func newDeviceConnection(email, password, deviceIp string, port uint16) (*device
 	}, nil
 }
 
-func (dc *deviceConnection) initNewRsaKeypair() error {
-	key, err := NewRsaKeypair()
+func initNewRsaKeypair() (*rsa.PrivateKey, string, error) {
+	privateKey, err := NewRsaKeypair()
 	if err != nil {
-		return fmt.Errorf("could not generate new RSA keypair: %w", err)
+		return nil, "", fmt.Errorf("could not generate new RSA keypair: %w", err)
 	}
-	dc.privateKey = key
-	pubKeyString, err := textualPublicKey(dc.privateKey)
+	pubKeyString, err := textualPublicKey(privateKey)
 	if err != nil {
-		dc.privateKey = nil
-		return fmt.Errorf("could not extract textual public key from priate key: %w", err)
+		return nil, "", fmt.Errorf("could not extract textual public key from priate key: %w", err)
 	}
-	dc.publicKeyPem = pubKeyString
-	return nil
+	return privateKey, pubKeyString, nil
 }
 
 func (dc *deviceConnection) devicePostUrl() string {
@@ -186,7 +181,8 @@ func (dc *deviceConnection) unmarshalPassthroughResponse(passthroughResult map[s
 
 func (dc *deviceConnection) doKeyExchange() error {
 	dc.logout()
-	if err := dc.initNewRsaKeypair(); err != nil {
+	privateKey, publicKeyPem, err := initNewRsaKeypair()
+	if err != nil {
 		return fmt.Errorf("could not initialise new RSA keypair: %w", err)
 	}
 
@@ -197,7 +193,7 @@ func (dc *deviceConnection) doKeyExchange() error {
 		Method:          "handshake",
 		RequestTimeMils: 0,
 		Params: handshakeParams{
-			Key: dc.publicKeyPem,
+			Key: publicKeyPem,
 		},
 	})
 	if err != nil {
@@ -209,7 +205,7 @@ func (dc *deviceConnection) doKeyExchange() error {
 	}
 
 	remoteKey := result["key"].(string)
-	block, iv, err := cbcCipherAndIvFromHandshakeResponse(remoteKey, dc.privateKey)
+	block, iv, err := cbcCipherAndIvFromHandshakeResponse(remoteKey, privateKey)
 	if err != nil {
 		return fmt.Errorf("could not determine CBC parameters from key exchange response: %w", err)
 	}
@@ -218,7 +214,7 @@ func (dc *deviceConnection) doKeyExchange() error {
 	return nil
 }
 func (dc *deviceConnection) hasExchangedKeys() bool {
-	return dc.hasValidSessionCookie() && dc.privateKey != nil && dc.cbcCipher != nil && dc.cbcIv != nil
+	return dc.hasValidSessionCookie() && dc.cbcCipher != nil && dc.cbcIv != nil
 }
 
 func (dc *deviceConnection) hasValidSessionCookie() bool {
@@ -282,8 +278,6 @@ func (dc *deviceConnection) forgetKeysAndSession() {
 	}})
 	dc.cbcCipher = nil
 	dc.cbcIv = nil
-	dc.privateKey = nil
-	dc.publicKeyPem = ""
 }
 
 func (dc *deviceConnection) makeApiCall(method string, params any) (map[string]interface{}, error) {
