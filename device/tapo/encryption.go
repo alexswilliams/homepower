@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/mergermarket/go-pkcs7"
 	"strconv"
 )
 
@@ -26,7 +27,7 @@ func textualPublicKey(key *rsa.PrivateKey) (string, error) {
 		return "", fmt.Errorf("could not marshal public key as PKIX: %w", err)
 	}
 	var outBytes bytes.Buffer
-	if err := pem.Encode(&outBytes, &pem.Block{
+	if err = pem.Encode(&outBytes, &pem.Block{
 		Type:  "PUBLIC KEY",
 		Bytes: marshalled,
 	}); err != nil {
@@ -55,46 +56,24 @@ func cbcCipherAndIvFromHandshakeResponse(base64Ciphertext string, decryptionKey 
 }
 
 func encryptWithPkcs7Padding(encrypter cipher.BlockMode, clearText []byte) string {
-	var padded = pkcs7Pad(clearText, encrypter.BlockSize())
-	var cipherText = make([]byte, len(padded))
+	padded, _ := pkcs7.Pad(clearText, encrypter.BlockSize())
+	cipherText := make([]byte, len(padded))
 	encrypter.CryptBlocks(cipherText, padded)
 	return base64.StdEncoding.EncodeToString(cipherText)
 }
 
-func decryptFromBase64(decrypter cipher.BlockMode, base64Ciphertext string) ([]byte, error) {
+func decryptAndRemovePadding(decrypter cipher.BlockMode, base64Ciphertext string) ([]byte, error) {
 	cipherText, err := base64.StdEncoding.DecodeString(base64Ciphertext)
 	if err != nil {
 		return nil, fmt.Errorf("could not decode ciphertext as base64: %w", err)
 	}
 	var clearText = make([]byte, len(cipherText))
 	decrypter.CryptBlocks(clearText, cipherText)
-	return pkcs7UnPad(clearText, decrypter.BlockSize())
-}
-
-// from https://github.com/mergermarket/go-pkcs7/blob/master/pkcs7.go - so small it's probably immoral to add a dependency
-func pkcs7Pad(buf []byte, size int) []byte {
-	bufLen := len(buf)
-	padLen := size - bufLen%size
-	padded := make([]byte, bufLen+padLen)
-	copy(padded, buf)
-	for i := range padLen {
-		padded[bufLen+i] = byte(padLen)
-	}
-	return padded
-}
-func pkcs7UnPad(padded []byte, size int) ([]byte, error) {
-	if len(padded)%size != 0 {
-		return nil, errors.New("block size incorrect for padded input")
-	}
-	bufLen := len(padded) - int(padded[len(padded)-1])
-	buf := make([]byte, bufLen)
-	copy(buf, padded[:bufLen])
-	return buf, nil
+	return pkcs7.Unpad(clearText, decrypter.BlockSize())
 }
 
 func hashUsername(username string) string {
-	input := []byte(username)
-	hashed := sha1.Sum(input)
+	hashed := sha1.Sum([]byte(username))
 	return hex.EncodeToString(hashed[:])
 }
 

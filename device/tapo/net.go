@@ -168,7 +168,7 @@ func (dc *deviceConnection) marshalPassthroughPayload(method string, params any)
 }
 
 func (dc *deviceConnection) unmarshalPassthroughResponse(passthroughResult map[string]interface{}) (map[string]interface{}, error) {
-	decryptedResponse, err := decryptFromBase64(dc.newDecrypter(), passthroughResult["response"].(string))
+	decryptedResponse, err := decryptAndRemovePadding(dc.newDecrypter(), passthroughResult["response"].(string))
 	if err != nil {
 		return nil, fmt.Errorf("could not unmarshal passthrough response: %w", err)
 	}
@@ -236,7 +236,7 @@ func (dc *deviceConnection) hasValidSessionCookie() bool {
 func (dc *deviceConnection) doLogin() error {
 	if !dc.hasExchangedKeys() {
 		if err := dc.doKeyExchange(); err != nil {
-			return fmt.Errorf("could not do key exchange before loggign in: %w", err)
+			return fmt.Errorf("could not do key exchange before logging in: %w", err)
 		}
 	}
 	dc.logout()
