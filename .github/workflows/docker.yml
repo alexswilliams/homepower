@@ -1,9 +1,13 @@
 name: Publish master to DockerHub
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - "Go Build & Test"
     branches:
-      - master
+      - "master"
+    types:
+      - "completed"
 
 jobs:
   Publish_Docker_Image:
