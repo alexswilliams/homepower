@@ -14,7 +14,7 @@ func Factory(deviceConfig types.DeviceConfig, tapoCredentials *config.Credential
 	case types.Kasa:
 		return kasa.NewDevice(&deviceConfig, registry), nil
 	case types.Tapo:
-		return tapo.NewDevice(tapoCredentials.EmailAddress, tapoCredentials.Password, &deviceConfig, registry)
+		return tapo.NewDevice(tapoCredentials.EmailAddress, tapoCredentials.Password, &deviceConfig, registry, 80)
 	default:
 		return nil, errors.New("unknown device type")
 	}

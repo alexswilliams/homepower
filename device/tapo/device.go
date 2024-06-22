@@ -15,8 +15,8 @@ type Device struct {
 	metrics      *prometheusMetrics
 }
 
-func NewDevice(email string, password string, config *types.DeviceConfig, registry prometheus.Registerer) (*Device, error) {
-	connection, err := newDeviceConnection(email, password, config.Ip, 80)
+func NewDevice(email string, password string, config *types.DeviceConfig, registry prometheus.Registerer, port uint16) (*Device, error) {
+	connection, err := newDeviceConnection(email, password, config.Ip, port)
 	if err != nil {
 		return nil, fmt.Errorf("could not initialise connection for device %s (%s): %w", config.Ip, config.Name, err)
 	}
