@@ -1,5 +1,7 @@
 package tapo
 
+import "fmt"
+
 type tapoDeviceConnection interface {
 	forgetKeysAndSession()
 	GetDeviceInfo() (map[string]interface{}, error)
@@ -42,6 +44,7 @@ func (dc *lazyDeviceConnection) GetEnergyUsage() (map[string]interface{}, error)
 func (dc *lazyDeviceConnection) choose() error {
 	klap, err := newKlapDeviceConnection(dc.email, dc.password, dc.deviceIp, dc.port)
 	if err != nil {
+		fmt.Printf("could not initialise klap connection for device %s: %s", dc.deviceIp, err)
 		return err
 	}
 	err = klap.doKeyExchange()
@@ -52,6 +55,7 @@ func (dc *lazyDeviceConnection) choose() error {
 
 	oldTapo, err := newTapoOldDeviceConnection(dc.email, dc.password, dc.deviceIp, dc.port)
 	if err != nil {
+		fmt.Printf("could not initialise old-style connection for device %s: %s", dc.deviceIp, err)
 		return err
 	}
 	dc.delegate = oldTapo

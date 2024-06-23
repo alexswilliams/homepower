@@ -76,10 +76,3 @@ func hashUsername(username string) string {
 	hashed := sha1.Sum([]byte(username))
 	return hex.EncodeToString(hashed[:])
 }
-
-func (dc *oldDeviceConnection) newEncrypter() cipher.BlockMode {
-	return cipher.NewCBCEncrypter(*dc.cbcCipher, dc.cbcIv)
-}
-func (dc *oldDeviceConnection) newDecrypter() cipher.BlockMode {
-	return cipher.NewCBCDecrypter(*dc.cbcCipher, dc.cbcIv)
-}

@@ -142,13 +142,15 @@ func (dc *oldDeviceConnection) marshalPassthroughPayload(method string, params a
 		Params: struct {
 			Request string `json:"request"`
 		}{
-			Request: encryptWithPkcs7Padding(dc.newEncrypter(), clearTextPayload),
+			Request: encryptWithPkcs7Padding(cipher.NewCBCEncrypter(*dc.cbcCipher, dc.cbcIv), clearTextPayload),
 		},
 	})
 }
 
 func (dc *oldDeviceConnection) unmarshalPassthroughResponse(passthroughResult map[string]interface{}) (map[string]interface{}, error) {
-	decryptedResponse, err := decryptAndRemovePadding(dc.newDecrypter(), passthroughResult["response"].(string))
+	decryptedResponse, err := decryptAndRemovePadding(
+		cipher.NewCBCDecrypter(*dc.cbcCipher, dc.cbcIv),
+		passthroughResult["response"].(string))
 	if err != nil {
 		return nil, fmt.Errorf("could not unmarshal passthrough response: %w", err)
 	}
