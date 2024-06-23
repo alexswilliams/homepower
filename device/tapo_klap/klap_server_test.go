@@ -8,8 +8,9 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"github.com/mergermarket/go-pkcs7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +30,7 @@ type klapServer struct {
 	password string
 	authHash []byte
 
-	validatedSessions map[string]bool
+	validatedSessions map[string]*testEncryption
 	handler           func(t *testing.T, method string, params any) ([]byte, error)
 }
 
@@ -46,6 +47,7 @@ func createKlapServer(t *testing.T, server *klapServer) (*httptest.Server, uint1
 	passHash := sha1.Sum([]byte(server.password))
 	authHash := sha256.Sum256(append(userHash[:], passHash[:]...))
 	server.authHash = authHash[:]
+	server.validatedSessions = map[string]*testEncryption{}
 
 	assert.NoError(t, err)
 	return testServer, uint16(port)
@@ -59,15 +61,43 @@ func (s *klapServer) handshake1(writer http.ResponseWriter, request *http.Reques
 	require.NoError(s.t, err)
 	require.Len(s.t, clientSeed, 16)
 	serverSeed := s.generateNewServerSeed()
-	buffer := append(append(bytes.Clone(clientSeed), serverSeed...), s.authHash...)
-	hash := sha256.Sum256(buffer)
+	hash := sha256.Sum256(append(append(bytes.Clone(clientSeed), serverSeed...), s.authHash...))
+
+	http.SetCookie(writer, &http.Cookie{
+		Name:    "TP_SESSIONID",
+		Value:   sessionIdFromSeeds(clientSeed, serverSeed),
+		Expires: time.Now().Add(24 * time.Hour),
+	})
 	writer.WriteHeader(http.StatusOK)
 	written, err := writer.Write(append(bytes.Clone(serverSeed), hash[:]...))
 	require.NoError(s.t, err)
 	require.Equal(s.t, 48, written)
+	s.t.Logf("Handshake 1 complete: client = %x, server = %x, session = %s", clientSeed, serverSeed, sessionIdFromSeeds(clientSeed, serverSeed))
+}
+
+func sessionIdFromSeeds(clientSeed []byte, serverSeed []byte) string {
+	return base64.StdEncoding.EncodeToString(append(bytes.Clone(clientSeed), serverSeed...))
 }
 func (s *klapServer) handshake2(writer http.ResponseWriter, request *http.Request) {
-	s.t.Fatalf("Unimplemented")
+	clientSeed, serverSeed := s.getSeedsFromCookie(request)
+	challenge, err := io.ReadAll(request.Body)
+	require.NoError(s.t, err)
+	require.Len(s.t, challenge, 32)
+
+	expected := sha256.Sum256(append(append(bytes.Clone(serverSeed), clientSeed...), s.authHash...))
+	if !bytes.Equal(challenge, expected[:]) {
+		http.Error(writer, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		return
+	}
+	s.validatedSessions[sessionIdFromSeeds(clientSeed, serverSeed)], err =
+		setupTestEncryption(s.t, append(append(bytes.Clone(clientSeed), serverSeed...), s.authHash...))
+	require.NoError(s.t, err)
+	s.t.Logf("Handshake 2 complete: marking session %s as valid\n", sessionIdFromSeeds(clientSeed, serverSeed))
+
+	writer.WriteHeader(http.StatusOK)
+	written, err := writer.Write([]byte{1})
+	require.NoError(s.t, err)
+	require.Equal(s.t, 1, written)
 }
 
 func (s *klapServer) handleRequest(writer http.ResponseWriter, request *http.Request) {
@@ -97,26 +127,15 @@ func (s *klapServer) failureForCode(code int) []byte {
 	return responseBytes
 }
 
-func (s *klapServer) getKeyDataFromCookie(writer http.ResponseWriter, request *http.Request) ([]byte, cipher.Block, []byte) {
+func (s *klapServer) getSeedsFromCookie(request *http.Request) ([]byte, []byte) {
 	sessionCookie, err := request.Cookie("TP_SESSIONID")
-	var innerKeyRand []byte
-	if errors.Is(err, http.ErrNoCookie) {
-		innerKeyRand = s.generateNewServerSeed()
-		http.SetCookie(writer, &http.Cookie{
-			Name:    "TP_SESSIONID",
-			Value:   base64.StdEncoding.EncodeToString(innerKeyRand),
-			Expires: time.Now().Add(86400 * time.Second),
-		})
-	} else {
-		innerKeyRand, err = base64.StdEncoding.DecodeString(sessionCookie.Value)
-		require.NoError(s.t, err)
-		require.Len(s.t, innerKeyRand, 16)
-	}
-	aesCipher, err := aes.NewCipher(innerKeyRand[0:16])
 	require.NoError(s.t, err)
-	iv := innerKeyRand[16:32]
-	require.Len(s.t, iv, aesCipher.BlockSize())
-	return innerKeyRand, aesCipher, iv
+	seeds, err := base64.StdEncoding.DecodeString(sessionCookie.Value)
+	require.NoError(s.t, err)
+	require.Len(s.t, seeds, 32)
+	clientSeed := seeds[0:16]
+	serverSeed := seeds[16:32]
+	return clientSeed, serverSeed
 }
 
 func (s *klapServer) generateNewServerSeed() []byte {
@@ -141,4 +160,56 @@ func (s *klapServer) encrypt(clearText []byte, aesCipher cipher.Block, iv []byte
 	cipherText := make([]byte, len(padded))
 	cipher.NewCBCEncrypter(aesCipher, iv).CryptBlocks(cipherText, padded)
 	return cipherText
+}
+
+type testEncryption struct {
+	block          cipher.Block
+	iv             []byte
+	signature      []byte
+	sequenceNumber int32
+}
+
+func setupTestEncryption(t *testing.T, localRemoteAuthBuffer []byte) (*testEncryption, error) {
+	keyHash := sha256.Sum256(append([]byte("lsk"), localRemoteAuthBuffer...))
+	ivHash := sha256.Sum256(append([]byte("iv"), localRemoteAuthBuffer...))
+	sequence := int32(binary.BigEndian.Uint32(ivHash[sha256.Size-4 : sha256.Size]))
+	sigHash := sha256.Sum256(append([]byte("ldk"), localRemoteAuthBuffer...))
+	aesCipher, err := aes.NewCipher(keyHash[:16])
+	if err != nil {
+		return nil, err
+	}
+	t.Logf("Starting Sequence: %x\n", sequence)
+	return &testEncryption{
+		block:          aesCipher,
+		iv:             ivHash[:12],
+		signature:      sigHash[:28],
+		sequenceNumber: sequence,
+	}, nil
+}
+
+func (ec *testEncryption) getIv() []byte {
+	return binary.BigEndian.AppendUint32(bytes.Clone(ec.iv), uint32(ec.sequenceNumber))
+}
+
+func (ec *testEncryption) sign(cipherText []byte) []byte {
+	hash := sha256.Sum256(
+		append(binary.BigEndian.AppendUint32(bytes.Clone(ec.signature), uint32(ec.sequenceNumber)), cipherText...))
+	return hash[:]
+}
+
+func (ec *testEncryption) Encrypt(data []byte) []byte {
+	padded, _ := pkcs7.Pad(data, aes.BlockSize)
+	cipherText := make([]byte, len(padded))
+	cipher.NewCBCEncrypter(ec.block, ec.getIv()).CryptBlocks(cipherText, padded)
+	return append(ec.sign(cipherText), cipherText...)
+}
+
+func (ec *testEncryption) Decrypt(data []byte) ([]byte, error) {
+	ec.sequenceNumber++
+	if len(data) < 32 {
+		return nil, fmt.Errorf("data must be at least 32 bytes")
+	}
+	plainText := make([]byte, len(data))
+	cipher.NewCBCDecrypter(ec.block, ec.getIv()).CryptBlocks(plainText, data[32:])
+	return pkcs7.Unpad(plainText[:len(plainText)-32], aes.BlockSize)
 }

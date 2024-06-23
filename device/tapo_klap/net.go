@@ -93,7 +93,6 @@ func (dc *deviceConnection) doKeyExchange() error {
 	if _, err := rand.Read(dc.localSeed); err != nil {
 		return err
 	}
-	fmt.Printf("Cookies A: %+v\n", dc.client.Jar.Cookies(dc.addresses.url))
 	request1, err := http.NewRequest(http.MethodPost, dc.addresses.baseUrl+"/app/handshake1", bytes.NewReader(dc.localSeed))
 	if err != nil {
 		return err
@@ -107,7 +106,6 @@ func (dc *deviceConnection) doKeyExchange() error {
 	if len(handshakeResponse) != 48 {
 		return fmt.Errorf("expected handshake 1 response to be 48 byte but got %d", len(handshakeResponse))
 	}
-	fmt.Printf("Cookies B: %+v\n", dc.client.Jar.Cookies(dc.addresses.url))
 	dc.remoteSeed = handshakeResponse[0:16]
 	userHash := sha1.Sum([]byte(dc.email))
 	passHash := sha1.Sum([]byte(dc.password))
@@ -118,8 +116,7 @@ func (dc *deviceConnection) doKeyExchange() error {
 	if !bytes.Equal(expectedHash[:], handshakeResponse[16:]) {
 		return errors.New("handshake 1 response hash did not match expected credentials")
 	}
-	time.Sleep(500 * time.Millisecond)
-	fmt.Println("KLAP Handshake 1 Complete")
+	time.Sleep(250 * time.Millisecond)
 
 	payload := sha256.Sum256(append(append(bytes.Clone(dc.remoteSeed), dc.localSeed...), dc.authHash...))
 	request2, err := http.NewRequest(http.MethodPost, dc.addresses.baseUrl+"/app/handshake2", bytes.NewReader(payload[:]))
@@ -130,17 +127,13 @@ func (dc *deviceConnection) doKeyExchange() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Cookies C: %+v\n", dc.client.Jar.Cookies(dc.addresses.url))
 
 	dc.encryption, err = setupEncryption(localRemoteAuthBuffer)
 	if err != nil {
 		return err
 	}
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	fmt.Println("KLAP Handshake 2 Complete")
-
-	fmt.Printf("Local: %v, Remote: %v, Hash: %v\n", dc.localSeed, dc.remoteSeed, localRemoteAuthBuffer)
-
 	return nil
 }
 
@@ -205,7 +198,6 @@ func (dc *deviceConnection) makeApiCall(payload string) (map[string]interface{},
 	}
 
 	encryptedPayload := dc.encryption.Encrypt([]byte(payload))
-	fmt.Printf("Cookies W: %+v\n", dc.client.Jar.Cookies(dc.addresses.url))
 	request, err := http.NewRequest(
 		http.MethodPost,
 		dc.addresses.baseUrl+"/app/request?seq="+strconv.Itoa(int(dc.encryption.sequenceNumber)),
@@ -219,14 +211,11 @@ func (dc *deviceConnection) makeApiCall(payload string) (map[string]interface{},
 		dc.forgetKeysAndSession()
 		return nil, err
 	}
-	fmt.Printf("Cookies X: %+v\n", dc.client.Jar.Cookies(dc.addresses.url))
-	fmt.Printf("Response: %v %s\n\n", response, string(response))
-
 	clearText, err := dc.encryption.Decrypt(response)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("clearText: %v %s\n\n", clearText, string(clearText))
+	// fmt.Printf("clearText: %v %s\n\n", clearText, string(clearText))
 	return dc.unmarshalApiResponse(clearText)
 }
 
