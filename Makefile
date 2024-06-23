@@ -10,7 +10,7 @@ deps: go.mod
 	go mod download
 
 run: bin/main
-	./bin/main
+	HOMEPOWER_DEVICE_CONFIG_FILEPATH=config/exampleDeviceManifest.yaml HOMEPOWER_CREDENTIAL_FILEPATH=config/exampleCredentials.yaml ./bin/main
 
 clean:
 	rm -rf bin vendor

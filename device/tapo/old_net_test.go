@@ -10,7 +10,7 @@ func TestOldLogin(t *testing.T) {
 	testServer, port := createOldServer(t, server)
 	defer testServer.Close()
 
-	dc, err := newDeviceConnection(server.username, server.password, "127.0.0.1", port)
+	dc, err := createOldTapoDeviceConnection(server.username, server.password, "127.0.0.1", port)
 	assert.NoError(t, err)
 	assert.Equal(t, false, dc.hasExchangedKeys())
 	assert.Equal(t, false, dc.isLoggedIn())

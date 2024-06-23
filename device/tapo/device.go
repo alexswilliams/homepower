@@ -11,15 +11,12 @@ import (
 
 type Device struct {
 	deviceConfig *types.DeviceConfig
-	connection   *deviceConnection
+	connection   tapoDeviceConnection
 	metrics      *prometheusMetrics
 }
 
 func NewDevice(email string, password string, config *types.DeviceConfig, registry prometheus.Registerer, port uint16) (*Device, error) {
-	connection, err := newDeviceConnection(email, password, config.Ip, port)
-	if err != nil {
-		return nil, fmt.Errorf("could not initialise connection for device %s (%s): %w", config.Ip, config.Name, err)
-	}
+	var connection tapoDeviceConnection = connectionFactory(email, password, config.Ip, port)
 	return &Device{
 		deviceConfig: config,
 		connection:   connection,
