@@ -133,7 +133,7 @@ func (dc *deviceConnection) doKeyExchange() error {
 		return err
 	}
 	time.Sleep(500 * time.Millisecond)
-	fmt.Println("KLAP Handshake 2 Complete")
+	fmt.Printf("KLAP Handshake Complete for %s\n", dc.addresses.ip)
 	return nil
 }
 
@@ -215,7 +215,7 @@ func (dc *deviceConnection) makeApiCall(payload string) (map[string]interface{},
 	if err != nil {
 		return nil, err
 	}
-	// fmt.Printf("clearText: %v %s\n\n", clearText, string(clearText))
+	fmt.Printf("clearText:\n %v\n %s\n\n", clearText, string(clearText))
 	return dc.unmarshalApiResponse(clearText)
 }
 

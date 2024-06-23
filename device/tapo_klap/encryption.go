@@ -26,7 +26,6 @@ func setupEncryption(localRemoteAuthBuffer []byte) (*encryptionContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Starting Sequence: %x\n", sequence)
 	return &encryptionContext{
 		block:          aesCipher,
 		iv:             ivHash[:12],

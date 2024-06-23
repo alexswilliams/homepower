@@ -101,15 +101,39 @@ func (s *klapServer) handshake2(writer http.ResponseWriter, request *http.Reques
 }
 
 func (s *klapServer) handleRequest(writer http.ResponseWriter, request *http.Request) {
-	s.t.Fatalf("Not yet implemented\n")
-}
-
-func (s *klapServer) assertNoErrorOrFailWithCode(originalError error, writer http.ResponseWriter, code int) bool {
-	if !assert.NoError(s.t, originalError) {
-		s.failWithCode(code, writer)
-		return true
+	if s.handler == nil {
+		s.t.Fatalf("No handler specified in test\n")
 	}
-	return false
+	clientSeed, serverSeed := s.getSeedsFromCookie(request)
+	encryption, found := s.validatedSessions[sessionIdFromSeeds(clientSeed, serverSeed)]
+	if !found {
+		s.t.Errorf("Could not find encryption context linked to session")
+		http.Error(writer, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		return
+	}
+	requestBytes, err := io.ReadAll(request.Body)
+	require.NoError(s.t, err)
+	requestClearText, err := encryption.Decrypt(s.t, requestBytes)
+	require.NoError(s.t, err)
+
+	var requestBody struct {
+		Method string `json:"method"`
+		Params string `json:"params"`
+	}
+	err = json.Unmarshal(requestClearText, &requestBody)
+	if err != nil {
+		s.failWithCode(1003, writer)
+		return
+	}
+
+	responseBody, err := s.handler(s.t, requestBody.Method, requestBody.Params)
+	require.NoError(s.t, err)
+
+	responseCipherText := encryption.Encrypt(responseBody)
+	writer.WriteHeader(http.StatusOK)
+	_, err = writer.Write(responseCipherText)
+	require.NoError(s.t, err)
+
 }
 
 func (s *klapServer) failWithCode(code int, writer http.ResponseWriter) {
@@ -204,12 +228,15 @@ func (ec *testEncryption) Encrypt(data []byte) []byte {
 	return append(ec.sign(cipherText), cipherText...)
 }
 
-func (ec *testEncryption) Decrypt(data []byte) ([]byte, error) {
+func (ec *testEncryption) Decrypt(t *testing.T, cipherText []byte) ([]byte, error) {
 	ec.sequenceNumber++
-	if len(data) < 32 {
-		return nil, fmt.Errorf("data must be at least 32 bytes")
+	if len(cipherText) < 32 {
+		return nil, fmt.Errorf("cipherText must be at least 32 bytes")
 	}
-	plainText := make([]byte, len(data))
-	cipher.NewCBCDecrypter(ec.block, ec.getIv()).CryptBlocks(plainText, data[32:])
+	signature := ec.sign(cipherText[32:])
+	require.EqualValues(t, signature, cipherText[0:32], "Bad signature for message received by server")
+
+	plainText := make([]byte, len(cipherText))
+	cipher.NewCBCDecrypter(ec.block, ec.getIv()).CryptBlocks(plainText, cipherText[32:])
 	return pkcs7.Unpad(plainText[:len(plainText)-32], aes.BlockSize)
 }

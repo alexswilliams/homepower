@@ -36,78 +36,78 @@ func handleP100(t *testing.T, method string, params any) ([]byte, error) {
 	t.Logf("Method: %s, Params: %v", method, params)
 	if method == "get_device_info" {
 		return json.Marshal(struct {
-			Result    any `json:"result"`
 			ErrorCode int `json:"error_code"`
+			Result    any `json:"result"`
 		}{
 			ErrorCode: 0,
 			Result: struct {
-				Avatar             string  `json:"avatar"`
 				DeviceId           string  `json:"device_id"`
-				DeviceOn           bool    `json:"device_on"`
-				FwId               string  `json:"fw_id"`
 				FwVer              string  `json:"fw_ver"`
-				HasSetLocationInfo bool    `json:"has_set_location_info"`
-				HwId               string  `json:"hw_id"`
 				HwVer              string  `json:"hw_ver"`
-				IP                 string  `json:"ip"`
-				Lang               string  `json:"lang"`
-				Latitude           float64 `json:"latitude"`
-				Longitude          float64 `json:"longitude"`
-				Location           string  `json:"location"`
-				MacAddress         string  `json:"mac"`
+				Type               string  `json:"type"`
 				Model              string  `json:"model"`
-				Nickname           string  `json:"nickname"`
+				MacAddress         string  `json:"mac"`
+				HwId               string  `json:"hw_id"`
+				FwId               string  `json:"fw_id"`
 				OemId              string  `json:"oem_id"`
+				Specs              string  `json:"specs"`
+				DeviceOn           bool    `json:"device_on"`
 				OnTime             int     `json:"on_time"`
 				Overheated         bool    `json:"overheated"`
-				Region             string  `json:"region"`
-				Rssi               int     `json:"rssi"`
-				SignalLevel        int     `json:"signal_level"`
-				Specs              string  `json:"specs"`
+				Nickname           string  `json:"nickname"`
+				Location           string  `json:"location"`
+				Avatar             string  `json:"avatar"`
+				Longitude          float64 `json:"longitude"`
+				Latitude           float64 `json:"latitude"`
+				HasSetLocationInfo bool    `json:"has_set_location_info"`
+				IP                 string  `json:"ip"`
 				Ssid               string  `json:"ssid"`
+				SignalLevel        int     `json:"signal_level"`
+				Rssi               int     `json:"rssi"`
+				Region             string  `json:"region"`
 				TimeDiff           int     `json:"time_diff"`
-				Type               string  `json:"type"`
-				TimeUsageToday     int     `json:"time_usage_today"`
-				TimeUsagePast7     int     `json:"time_usage_past7"`
-				TimeUsagePast30    int     `json:"time_usage_past30"`
+				Lang               string  `json:"lang"`
 				DefaultStates      any     `json:"default_states"`
+				AutoOffStatus      string  `json:"auto_off_status"`
+				AutoOffRemainTime  int     `json:"auto_off_remain_time"`
 			}{
-				Avatar:             "plug",
-				DeviceId:           "8022773CA54EB0774EC28EE59F6ECF951F4B0EDC",
-				DeviceOn:           true,
-				FwId:               "1D18AD293A25ABDE41405B20C6F98816",
-				FwVer:              "1.2.10 Build 20210207 Rel. 67438",
-				HasSetLocationInfo: false,
-				HwId:               "9994A0A7D5B29645B8150C392284029D",
+				DeviceId:           "802280A16D601909124373211884D9081F4B1B9C",
+				FwVer:              "1.5.5 Build 20230927 Rel. 40646",
 				HwVer:              "1.20.0",
-				IP:                 "127.0.0.1",
-				Lang:               "en_US",
-				Latitude:           -1879048193, // rogue value - 0x8FFFFFFF
-				Longitude:          -1879048193, // rogue value - 0x8FFFFFFF
-				Location:           "living_room",
-				MacAddress:         "5C-A6-E6-FE-C3-36",
-				Model:              "P100",
-				Nickname:           "U21hcnQgUGx1Zw==",
-				OemId:              "D43E293FEA5A174CC7534285828B0D15",
-				OnTime:             194,
-				Overheated:         false,
-				Region:             "Europe/London",
-				Rssi:               -34,
-				SignalLevel:        3,
-				Specs:              "UK",
-				Ssid:               "QWxleElvVA==",
-				TimeDiff:           0,
 				Type:               "SMART.TAPOPLUG",
-				TimeUsageToday:     3,
-				TimeUsagePast7:     3,
-				TimeUsagePast30:    3,
+				Model:              "P100",
+				MacAddress:         "5C-A6-E6-FE-BE-0B",
+				HwId:               "9994A0A7D5B29645B8150C392284029D",
+				FwId:               "1D18AD293A25ABDE41405B20C6F98816",
+				OemId:              "D43E293FEA5A174CC7534285828B0D15",
+				Specs:              "UK",
+				DeviceOn:           false,
+				OnTime:             0,
+				Overheated:         false,
+				Nickname:           "U2xvdyBDb29rZXI=",
+				Location:           "",
+				Avatar:             "egg_boiler",
+				Longitude:          -1879048193,
+				Latitude:           -1879048193,
+				HasSetLocationInfo: false,
+				IP:                 "127.0.0.1",
+				Ssid:               "QWxleElvVA==",
+				SignalLevel:        3,
+				Rssi:               -44,
+				Region:             "Europe/London",
+				TimeDiff:           0,
+				Lang:               "en_US",
 				DefaultStates: struct {
 					State any    `json:"state"`
 					Type  string `json:"type"`
 				}{
-					State: map[string]bool{},
-					Type:  "last_states",
+					Type: "custom",
+					State: map[string]bool{
+						"on": false,
+					},
 				},
+				AutoOffStatus:     "off",
+				AutoOffRemainTime: 0,
 			},
 		})
 	} else {
