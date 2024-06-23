@@ -1,4 +1,4 @@
-package tapo_klap
+package tapo
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestOldDevice(t *testing.T) {
+func TestKlapDevice(t *testing.T) {
 	server := &klapServer{
 		t:        t,
 		username: "test@example.com",
@@ -32,7 +32,7 @@ func TestOldDevice(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func handleP100(t *testing.T, method string, params any) ([]byte, error) {
+func handleKlapP100(t *testing.T, method string, params any) ([]byte, error) {
 	t.Logf("Method: %s, Params: %v", method, params)
 	if method == "get_device_info" {
 		return json.Marshal(struct {

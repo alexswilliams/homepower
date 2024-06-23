@@ -1,4 +1,4 @@
-package tapo_klap
+package tapo
 
 import (
 	"bytes"
@@ -17,22 +17,16 @@ import (
 	"time"
 )
 
-type requestBodyMethodParamsTime struct {
-	Method          string `json:"method"`
-	Params          any    `json:"params,omitempty"`
-	RequestTimeMils int64  `json:"requestTimeMils"`
-}
-
-type deviceAddresses struct {
+type klapDeviceAddresses struct {
 	ip      string // x.x.x.x
 	baseUrl string // http://x.x.x.x:80
 	url     *url.URL
 }
 
-type deviceConnection struct {
+type klapDeviceConnection struct {
 	email     string // Hashed email of the account that originally set up the device
 	password  string // Isn't it weird how the email is hashed and the password isn't
-	addresses deviceAddresses
+	addresses klapDeviceAddresses
 	client    *http.Client // A long-lived HTTP client that also retains the HTTP session state (e.g. cookies)
 
 	localSeed  []byte
@@ -42,7 +36,7 @@ type deviceConnection struct {
 }
 
 //goland:noinspection HttpUrlsUsage
-func newDeviceConnection(email, password, deviceIp string, port uint16) (*deviceConnection, error) {
+func newKlapDeviceConnection(email, password, deviceIp string, port uint16) (*klapDeviceConnection, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create new cookie jar whilst initialising %s: %w", deviceIp, err)
@@ -62,10 +56,10 @@ func newDeviceConnection(email, password, deviceIp string, port uint16) (*device
 	if err != nil {
 		return nil, fmt.Errorf("could not parse '%s' as a URL object: %w", baseUrl, err)
 	}
-	return &deviceConnection{
+	return &klapDeviceConnection{
 		email:    email,
 		password: password,
-		addresses: deviceAddresses{
+		addresses: klapDeviceAddresses{
 			ip:      deviceIp,
 			baseUrl: baseUrl,
 			url:     parsedUrl,
@@ -78,7 +72,7 @@ func newDeviceConnection(email, password, deviceIp string, port uint16) (*device
 	}, nil
 }
 
-func (dc *deviceConnection) applyHeadersTo(request *http.Request) {
+func (dc *klapDeviceConnection) applyHeadersTo(request *http.Request) {
 	request.Header.Set("Referer", dc.addresses.baseUrl)
 	request.Header.Set("requestByApp", "true")
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
@@ -88,7 +82,7 @@ func (dc *deviceConnection) applyHeadersTo(request *http.Request) {
 	request.Header.Set("User-Agent", "okhttp/3.12.13")
 }
 
-func (dc *deviceConnection) doKeyExchange() error {
+func (dc *klapDeviceConnection) doKeyExchange() error {
 	dc.localSeed = make([]byte, 16)
 	if _, err := rand.Read(dc.localSeed); err != nil {
 		return err
@@ -137,11 +131,11 @@ func (dc *deviceConnection) doKeyExchange() error {
 	return nil
 }
 
-func (dc *deviceConnection) hasExchangedKeys() bool {
+func (dc *klapDeviceConnection) hasExchangedKeys() bool {
 	return dc.hasValidSessionCookie() && dc.localSeed != nil && len(dc.localSeed) > 0
 }
 
-func (dc *deviceConnection) exchangeExpect200(request *http.Request) ([]byte, error) {
+func (dc *klapDeviceConnection) exchangeExpect200(request *http.Request) ([]byte, error) {
 	response, err := dc.client.Do(request)
 	if err != nil {
 		return nil, err
@@ -159,7 +153,7 @@ func (dc *deviceConnection) exchangeExpect200(request *http.Request) ([]byte, er
 	return responseBody, nil
 }
 
-func (dc *deviceConnection) hasValidSessionCookie() bool {
+func (dc *klapDeviceConnection) hasValidSessionCookie() bool {
 	for _, cookie := range dc.client.Jar.Cookies(dc.addresses.url) {
 		if cookie.Name == "TP_SESSIONID" {
 			if cookie.Expires.Year() < 1601 { // has no expiry
@@ -171,7 +165,7 @@ func (dc *deviceConnection) hasValidSessionCookie() bool {
 	return false
 }
 
-func (dc *deviceConnection) forgetKeysAndSession() {
+func (dc *klapDeviceConnection) forgetKeysAndSession() {
 	dc.client.CloseIdleConnections()
 	dc.client.Jar.SetCookies(dc.addresses.url, []*http.Cookie{{
 		Name:   "TP_SESSIONID",
@@ -182,13 +176,13 @@ func (dc *deviceConnection) forgetKeysAndSession() {
 	dc.authHash = nil
 }
 
-func (dc *deviceConnection) GetDeviceInfo() (map[string]interface{}, error) {
+func (dc *klapDeviceConnection) GetDeviceInfo() (map[string]interface{}, error) {
 	return dc.makeApiCall("{\"method\": \"get_device_info\"}")
 }
-func (dc *deviceConnection) GetEnergyUsage() (map[string]interface{}, error) {
+func (dc *klapDeviceConnection) GetEnergyUsage() (map[string]interface{}, error) {
 	return dc.makeApiCall("{\"method\": \"get_energy_usage\"}")
 }
-func (dc *deviceConnection) makeApiCall(payload string) (map[string]interface{}, error) {
+func (dc *klapDeviceConnection) makeApiCall(payload string) (map[string]interface{}, error) {
 	if !dc.hasExchangedKeys() {
 		log.Println("Not logged in, will log in before making api request")
 		if err := dc.doKeyExchange(); err != nil {
@@ -219,7 +213,7 @@ func (dc *deviceConnection) makeApiCall(payload string) (map[string]interface{},
 	return dc.unmarshalApiResponse(clearText)
 }
 
-func (dc *deviceConnection) unmarshalApiResponse(response []byte) (map[string]interface{}, error) {
+func (dc *klapDeviceConnection) unmarshalApiResponse(response []byte) (map[string]interface{}, error) {
 	var responseData map[string]interface{}
 	if err := json.Unmarshal(response, &responseData); err != nil {
 		return nil, err

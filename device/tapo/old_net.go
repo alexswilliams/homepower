@@ -22,7 +22,7 @@ type requestBodyMethodParamsTime struct {
 	RequestTimeMils int64  `json:"requestTimeMils"`
 }
 
-type deviceAddresses struct {
+type oldDeviceAddresses struct {
 	ip          string // x.x.x.x
 	baseUrl     string // http://x.x.x.x:80
 	url         *url.URL
@@ -30,10 +30,10 @@ type deviceAddresses struct {
 	appTokenUrl string // Empty string when not logged in, otherwise http://x.x.x.x:80/app?token=xxxx
 }
 
-type deviceConnection struct {
+type oldDeviceConnection struct {
 	hashedEmail string // Hashed email of the account that originally set up the device
 	password    string // Isn't it weird how the email is hashed and the password isn't
-	addresses   deviceAddresses
+	addresses   oldDeviceAddresses
 	client      *http.Client // A long-lived HTTP client that also retains the HTTP session state (e.g. cookies)
 
 	cbcIv     []byte        // The shared CBC init vector between this app and the device, nil until after key-exchange
@@ -41,7 +41,7 @@ type deviceConnection struct {
 }
 
 //goland:noinspection HttpUrlsUsage
-func newDeviceConnection(email, password, deviceIp string, port uint16) (*deviceConnection, error) {
+func newTapoOldDeviceConnection(email, password, deviceIp string, port uint16) (*oldDeviceConnection, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create new cookie jar whilst initialising %s: %w", deviceIp, err)
@@ -57,14 +57,14 @@ func newDeviceConnection(email, password, deviceIp string, port uint16) (*device
 		ForceAttemptHTTP2:      false,
 	}
 	baseUrl := "http://" + deviceIp + ":" + strconv.FormatUint(uint64(port), 10)
-	parsedUrl, err := url.Parse(baseUrl)
+	parsedUrl, err := url.Parse(baseUrl + "/app")
 	if err != nil {
 		return nil, fmt.Errorf("could not parse '%s' as a URL object: %w", baseUrl, err)
 	}
-	return &deviceConnection{
+	return &oldDeviceConnection{
 		hashedEmail: hashUsername(email),
 		password:    password,
-		addresses: deviceAddresses{
+		addresses: oldDeviceAddresses{
 			ip:          deviceIp,
 			baseUrl:     baseUrl,
 			url:         parsedUrl,
@@ -79,7 +79,7 @@ func newDeviceConnection(email, password, deviceIp string, port uint16) (*device
 	}, nil
 }
 
-func (dc *deviceConnection) devicePostUrl() string {
+func (dc *oldDeviceConnection) devicePostUrl() string {
 	if dc.addresses.appTokenUrl == "" {
 		return dc.addresses.appUrl
 	} else {
@@ -87,7 +87,7 @@ func (dc *deviceConnection) devicePostUrl() string {
 	}
 }
 
-func (dc *deviceConnection) applyHeadersTo(request *http.Request) {
+func (dc *oldDeviceConnection) applyHeadersTo(request *http.Request) {
 	request.Header.Set("Referer", dc.addresses.baseUrl)
 	request.Header.Set("requestByApp", "true")
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
@@ -97,7 +97,7 @@ func (dc *deviceConnection) applyHeadersTo(request *http.Request) {
 	request.Header.Set("User-Agent", "okhttp/3.12.13")
 }
 
-func (dc *deviceConnection) exchange(body []byte) (map[string]interface{}, error) {
+func (dc *oldDeviceConnection) exchange(body []byte) (map[string]interface{}, error) {
 	request, err := http.NewRequest(http.MethodPost, dc.devicePostUrl(), bytes.NewReader(body))
 	dc.applyHeadersTo(request)
 
@@ -125,7 +125,7 @@ func (dc *deviceConnection) exchange(body []byte) (map[string]interface{}, error
 	return result, nil
 }
 
-func (dc *deviceConnection) marshalPassthroughPayload(method string, params any) ([]byte, error) {
+func (dc *oldDeviceConnection) marshalPassthroughPayload(method string, params any) ([]byte, error) {
 	clearTextPayload, err := json.Marshal(requestBodyMethodParamsTime{
 		Method:          method,
 		RequestTimeMils: time.Now().UnixMilli(),
@@ -147,7 +147,7 @@ func (dc *deviceConnection) marshalPassthroughPayload(method string, params any)
 	})
 }
 
-func (dc *deviceConnection) unmarshalPassthroughResponse(passthroughResult map[string]interface{}) (map[string]interface{}, error) {
+func (dc *oldDeviceConnection) unmarshalPassthroughResponse(passthroughResult map[string]interface{}) (map[string]interface{}, error) {
 	decryptedResponse, err := decryptAndRemovePadding(dc.newDecrypter(), passthroughResult["response"].(string))
 	if err != nil {
 		return nil, fmt.Errorf("could not unmarshal passthrough response: %w", err)
@@ -164,7 +164,7 @@ func (dc *deviceConnection) unmarshalPassthroughResponse(passthroughResult map[s
 	return responseResult, nil
 }
 
-func (dc *deviceConnection) doKeyExchange() error {
+func (dc *oldDeviceConnection) doKeyExchange() error {
 	dc.logout()
 	privateKey, err := NewRsaKeypair()
 	if err != nil {
@@ -202,11 +202,11 @@ func (dc *deviceConnection) doKeyExchange() error {
 	dc.cbcCipher = block
 	return nil
 }
-func (dc *deviceConnection) hasExchangedKeys() bool {
+func (dc *oldDeviceConnection) hasExchangedKeys() bool {
 	return dc.hasValidSessionCookie() && dc.cbcCipher != nil && dc.cbcIv != nil
 }
 
-func (dc *deviceConnection) hasValidSessionCookie() bool {
+func (dc *oldDeviceConnection) hasValidSessionCookie() bool {
 	for _, cookie := range dc.client.Jar.Cookies(dc.addresses.url) {
 		if cookie.Name == "TP_SESSIONID" {
 			if cookie.Expires.Year() < 1601 { // has no expiry
@@ -218,7 +218,7 @@ func (dc *deviceConnection) hasValidSessionCookie() bool {
 	return false
 }
 
-func (dc *deviceConnection) doLogin() error {
+func (dc *oldDeviceConnection) doLogin() error {
 	if !dc.hasExchangedKeys() {
 		if err := dc.doKeyExchange(); err != nil {
 			return fmt.Errorf("could not do key exchange before logging in: %w", err)
@@ -250,14 +250,14 @@ func (dc *deviceConnection) doLogin() error {
 	dc.addresses.appTokenUrl = dc.addresses.appUrl + "?token=" + token
 	return nil
 }
-func (dc *deviceConnection) isLoggedIn() bool {
+func (dc *oldDeviceConnection) isLoggedIn() bool {
 	return dc.hasExchangedKeys() && dc.addresses.appTokenUrl != "" && dc.client != nil
 }
-func (dc *deviceConnection) logout() {
+func (dc *oldDeviceConnection) logout() {
 	dc.addresses.appTokenUrl = ""
 }
 
-func (dc *deviceConnection) forgetKeysAndSession() {
+func (dc *oldDeviceConnection) forgetKeysAndSession() {
 	dc.logout()
 	dc.client.CloseIdleConnections()
 	dc.client.Jar.SetCookies(dc.addresses.url, []*http.Cookie{{
@@ -268,13 +268,13 @@ func (dc *deviceConnection) forgetKeysAndSession() {
 	dc.cbcIv = nil
 }
 
-func (dc *deviceConnection) GetDeviceInfo() (map[string]interface{}, error) {
+func (dc *oldDeviceConnection) GetDeviceInfo() (map[string]interface{}, error) {
 	return dc.makeApiCall("get_device_info")
 }
-func (dc *deviceConnection) GetEnergyUsage() (map[string]interface{}, error) {
+func (dc *oldDeviceConnection) GetEnergyUsage() (map[string]interface{}, error) {
 	return dc.makeApiCall("get_energy_usage")
 }
-func (dc *deviceConnection) makeApiCall(method string) (map[string]interface{}, error) {
+func (dc *oldDeviceConnection) makeApiCall(method string) (map[string]interface{}, error) {
 	if !dc.isLoggedIn() {
 		log.Println("Not logged in, will log in before making api request")
 		if err := dc.doLogin(); err != nil {

@@ -1,4 +1,4 @@
-package tapo_klap
+package tapo
 
 import (
 	"github.com/stretchr/testify/assert"
@@ -10,7 +10,7 @@ func TestKlapLogin(t *testing.T) {
 	testServer, port := createKlapServer(t, server)
 	defer testServer.Close()
 
-	dc, err := newDeviceConnection(server.username, server.password, "127.0.0.1", port)
+	dc, err := newKlapDeviceConnection(server.username, server.password, "127.0.0.1", port)
 	assert.NoError(t, err)
 	assert.Equal(t, false, dc.hasExchangedKeys())
 

@@ -77,9 +77,9 @@ func hashUsername(username string) string {
 	return hex.EncodeToString(hashed[:])
 }
 
-func (dc *deviceConnection) newEncrypter() cipher.BlockMode {
+func (dc *oldDeviceConnection) newEncrypter() cipher.BlockMode {
 	return cipher.NewCBCEncrypter(*dc.cbcCipher, dc.cbcIv)
 }
-func (dc *deviceConnection) newDecrypter() cipher.BlockMode {
+func (dc *oldDeviceConnection) newDecrypter() cipher.BlockMode {
 	return cipher.NewCBCDecrypter(*dc.cbcCipher, dc.cbcIv)
 }

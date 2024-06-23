@@ -1,4 +1,4 @@
-package tapo_klap
+package tapo
 
 import (
 	"bytes"
