@@ -36,7 +36,7 @@ type klapDeviceConnection struct {
 }
 
 //goland:noinspection HttpUrlsUsage
-func newKlapDeviceConnection(email, password, deviceIp string, port uint16) (*klapDeviceConnection, error) {
+func createKlapDeviceConnection(email, password, deviceIp string, port uint16) (*klapDeviceConnection, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create new cookie jar whilst initialising %s: %w", deviceIp, err)

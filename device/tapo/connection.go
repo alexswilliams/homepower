@@ -42,7 +42,7 @@ func (dc *lazyDeviceConnection) GetEnergyUsage() (map[string]interface{}, error)
 }
 
 func (dc *lazyDeviceConnection) choose() error {
-	klap, err := newKlapDeviceConnection(dc.email, dc.password, dc.deviceIp, dc.port)
+	klap, err := createKlapDeviceConnection(dc.email, dc.password, dc.deviceIp, dc.port)
 	if err != nil {
 		fmt.Printf("could not initialise klap connection for device %s: %s", dc.deviceIp, err)
 		return err
@@ -53,7 +53,7 @@ func (dc *lazyDeviceConnection) choose() error {
 		return err
 	}
 
-	oldTapo, err := newTapoOldDeviceConnection(dc.email, dc.password, dc.deviceIp, dc.port)
+	oldTapo, err := createOldTapoDeviceConnection(dc.email, dc.password, dc.deviceIp, dc.port)
 	if err != nil {
 		fmt.Printf("could not initialise old-style connection for device %s: %s", dc.deviceIp, err)
 		return err

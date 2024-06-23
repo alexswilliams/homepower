@@ -41,7 +41,7 @@ type oldDeviceConnection struct {
 }
 
 //goland:noinspection HttpUrlsUsage
-func newTapoOldDeviceConnection(email, password, deviceIp string, port uint16) (*oldDeviceConnection, error) {
+func createOldTapoDeviceConnection(email, password, deviceIp string, port uint16) (*oldDeviceConnection, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create new cookie jar whilst initialising %s: %w", deviceIp, err)
