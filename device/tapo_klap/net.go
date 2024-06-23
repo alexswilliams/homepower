@@ -215,7 +215,7 @@ func (dc *deviceConnection) makeApiCall(payload string) (map[string]interface{},
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("clearText:\n %v\n %s\n\n", clearText, string(clearText))
+	//fmt.Printf("clearText:\n %v\n %s\n\n", clearText, string(clearText))
 	return dc.unmarshalApiResponse(clearText)
 }
 
