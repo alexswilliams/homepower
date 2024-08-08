@@ -209,7 +209,7 @@ func (dc *klapDeviceConnection) makeApiCall(payload string) (map[string]interfac
 	if err != nil {
 		return nil, err
 	}
-	//fmt.Printf("clearText:\n %v\n %s\n\n", clearText, string(clearText))
+	//fmt.Printf("clearText:\n %s\n\n", string(clearText))
 	return dc.unmarshalApiResponse(clearText)
 }
 

@@ -68,6 +68,9 @@ type common struct {
 	ModelName       string
 	OemId           string
 	Overheated      bool
+	OverCurrent     bool
+	PowerProtected  bool
+	Charging        bool
 	WifiRssi        int
 	SignalLevel     int
 	DeviceType      string // e.g. SMART.TAPOBULB, SMART.TAPOPLUG
@@ -107,10 +110,19 @@ func (dev *Device) populateDeviceInfo(status *deviceStatus) error {
 	status.Mac = strings.ReplaceAll(responseResult["mac"].(string), "-", "")
 	status.ModelName = responseResult["model"].(string)
 	status.OemId = responseResult["oem_id"].(string)
-	status.Overheated = responseResult["overheated"].(bool)
 	status.WifiRssi = int(responseResult["rssi"].(float64))
 	status.SignalLevel = int(responseResult["signal_level"].(float64))
 	status.DeviceType = responseResult["type"].(string)
+
+	if _, exists := responseResult["overheated"]; exists {
+		status.Overheated = responseResult["overheated"].(bool)
+	}
+	if _, exists := responseResult["overheat_status"]; exists {
+		status.Overheated = responseResult["overheat_status"].(string) != "normal"
+		status.OverCurrent = responseResult["overcurrent_status"].(string) != "normal"
+		status.PowerProtected = responseResult["power_protection_status"].(string) != "normal"
+		status.Charging = responseResult["charging_status"].(string) != "normal"
+	}
 
 	if status.DeviceType == "SMART.TAPOBULB" {
 		status.smartBulbInfo = &smartBulbInfo{

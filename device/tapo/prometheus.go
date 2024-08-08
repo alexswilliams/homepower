@@ -14,6 +14,9 @@ type prometheusMetrics struct {
 
 	updateInfoMetric func(status *deviceStatus) error
 	overheated       *prometheus.Gauge
+	overCurrent      *prometheus.Gauge
+	powerProtected   *prometheus.Gauge
+	charging         *prometheus.Gauge
 	wifiRssi         *prometheus.Gauge
 	signalLevel      *prometheus.Gauge
 	deviceTurnedOn   *prometheus.Gauge
@@ -39,6 +42,9 @@ func registerMetrics(registry prometheus.Registerer, commonLabels prometheus.Lab
 
 		updateInfoMetric: registerInfoMetricUpdater(registry, commonLabels),
 		overheated:       types.NewGauge(registry, commonLabels, "tapo", "overheated_bool"),
+		overCurrent:      types.NewGauge(registry, commonLabels, "tapo", "overcurrent_bool"),
+		powerProtected:   types.NewGauge(registry, commonLabels, "tapo", "power_protected_bool"),
+		charging:         types.NewGauge(registry, commonLabels, "tapo", "charging_bool"),
 		wifiRssi:         types.NewGauge(registry, commonLabels, "tapo", "wifi_rssi_db"),
 		signalLevel:      types.NewGauge(registry, commonLabels, "tapo", "signal_level"),
 		deviceTurnedOn:   types.NewGauge(registry, commonLabels, "tapo", "device_turned_on_bool"),
@@ -66,6 +72,9 @@ func (metrics *prometheusMetrics) updateMetrics(status *deviceStatus) error {
 		metrics.resetToRogueValues()
 	} else {
 		types.SetFromBool(metrics.overheated, status.Overheated)
+		types.SetFromBool(metrics.overCurrent, status.OverCurrent)
+		types.SetFromBool(metrics.powerProtected, status.PowerProtected)
+		types.SetFromBool(metrics.charging, status.Charging)
 		types.SetFromInt(metrics.wifiRssi, status.WifiRssi)
 		types.SetFromInt(metrics.signalLevel, status.SignalLevel)
 		if metrics.isSwitch && status.smartPlugInfo != nil {
@@ -94,6 +103,9 @@ func (metrics *prometheusMetrics) updateMetrics(status *deviceStatus) error {
 func (metrics *prometheusMetrics) resetToRogueValues() {
 	_ = metrics.updateInfoMetric(nil)
 	types.SetIfPresent(metrics.overheated, -1.0)
+	types.SetIfPresent(metrics.overCurrent, -1.0)
+	types.SetIfPresent(metrics.powerProtected, -1.0)
+	types.SetIfPresent(metrics.charging, -1.0)
 	types.SetIfPresent(metrics.wifiRssi, +1.0) // nb: positive rogue value
 	types.SetIfPresent(metrics.signalLevel, -1.0)
 	types.SetIfPresent(metrics.deviceTurnedOn, -1.0)
