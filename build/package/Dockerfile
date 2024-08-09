@@ -1,4 +1,4 @@
-FROM docker.io/golang:1.22.6-bookworm as build
+FROM docker.io/golang:1.22.6-bookworm AS build
 WORKDIR /go/src/app
 COPY . ./
 RUN make bin/main
