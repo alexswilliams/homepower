@@ -1,7 +1,6 @@
-CGO_ENABLED=0
-
-bin/main: deps $(shell find . -name '*.go')
-	go build  -o bin/main -ldflags="-s -w" -tags netgo -a  cmd/main.go
+bin/main: $(shell find . -name '*.go')
+	CGO_ENABLED=0 go build -o bin/main -a cmd/main.go
+	ldd bin/main || true
 
 test: $(shell find . -name '*.go')
 	go test ./device/...

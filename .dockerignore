@@ -1,0 +1,7 @@
+.gitignore
+.idea
+.run
+.github
+bin
+vendor
+config/exampleCredentials.yaml
