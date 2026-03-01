@@ -15,9 +15,6 @@ clean:
 	rm -rf bin vendor
 
 docker-local:
-	docker build -f build/package/Dockerfile .
-
-podman-local:
-	podman build -f build/package/Dockerfile .
+	docker build -f build/package/Dockerfile -t homepower:latest .
 
 .PHONY: deps run clean docker-local podman-local test
