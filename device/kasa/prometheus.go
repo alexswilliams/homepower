@@ -2,9 +2,10 @@ package kasa
 
 import (
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"homepower/types"
 	"strconv"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type prometheusMetrics struct {

@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"homepower/types"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const sysInfoBody = `{"system":{"get_sysinfo":null}}`

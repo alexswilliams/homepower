@@ -1,8 +1,9 @@
 package tapo
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestOldLogin(t *testing.T) {

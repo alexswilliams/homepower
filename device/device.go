@@ -2,11 +2,12 @@ package device
 
 import (
 	"errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"homepower/config"
 	"homepower/device/kasa"
 	"homepower/device/tapo"
 	"homepower/types"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func Factory(deviceConfig types.DeviceConfig, tapoCredentials *config.Credentials, registry prometheus.Registerer) (types.PollableDevice, error) {

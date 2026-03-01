@@ -2,10 +2,11 @@ package config
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"homepower/types"
 	"log"
 	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
 func ReadConfigAndCredentials() *AppConfig {

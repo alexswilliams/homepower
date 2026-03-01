@@ -1,10 +1,11 @@
 package types
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func GenerateCommonLabels(dev *DeviceConfig) map[string]string {

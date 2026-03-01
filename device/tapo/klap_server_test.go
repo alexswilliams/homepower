@@ -11,9 +11,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/mergermarket/go-pkcs7"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +18,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mergermarket/go-pkcs7"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type klapServer struct {

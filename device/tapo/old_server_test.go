@@ -12,10 +12,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
-	"github.com/mergermarket/go-pkcs7"
-	"github.com/mitchellh/mapstructure"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +19,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mergermarket/go-pkcs7"
+	"github.com/mitchellh/mapstructure"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type oldServer struct {

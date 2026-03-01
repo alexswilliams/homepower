@@ -13,8 +13,9 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/mergermarket/go-pkcs7"
 	"strconv"
+
+	"github.com/mergermarket/go-pkcs7"
 )
 
 func NewRsaKeypair() (*rsa.PrivateKey, error) {

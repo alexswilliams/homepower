@@ -3,10 +3,11 @@ package tapo
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"homepower/types"
 	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type Device struct {
@@ -16,7 +17,7 @@ type Device struct {
 }
 
 func NewDevice(email string, password string, config *types.DeviceConfig, registry prometheus.Registerer, port uint16) (*Device, error) {
-	var connection tapoDeviceConnection = connectionFactory(email, password, config.Ip, port)
+	var connection = connectionFactory(email, password, config.Ip, port)
 	return &Device{
 		deviceConfig: config,
 		connection:   connection,

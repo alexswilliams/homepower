@@ -3,10 +3,11 @@ package tapo
 import (
 	"encoding/json"
 	"errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/stretchr/testify/assert"
 	"homepower/types"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestOldDevice(t *testing.T) {

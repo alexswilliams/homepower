@@ -1,12 +1,12 @@
 module homepower
 
-go 1.24.4
+go 1.26.0
 
 require (
 	github.com/mergermarket/go-pkcs7 v0.0.0-20170926155232-153b18ea13c9
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/prometheus/client_golang v1.22.0
-	github.com/stretchr/testify v1.10.0
+	github.com/prometheus/client_golang v1.23.2
+	github.com/stretchr/testify v1.11.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -19,8 +19,9 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.64.0 // indirect
-	github.com/prometheus/procfs v0.16.1 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
+	github.com/prometheus/common v0.67.5 // indirect
+	github.com/prometheus/procfs v0.20.1 // indirect
+	go.yaml.in/yaml/v2 v2.4.3 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )
